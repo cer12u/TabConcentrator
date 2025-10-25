@@ -3,8 +3,7 @@ import { Bookmark } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 
 interface LoginPageProps {
   onLogin: (username: string, password: string) => void;
@@ -12,31 +11,37 @@ interface LoginPageProps {
 }
 
 export default function LoginPage({ onLogin, onRegister }: LoginPageProps) {
-  const [loginUsername, setLoginUsername] = useState("");
-  const [loginPassword, setLoginPassword] = useState("");
-  const [registerUsername, setRegisterUsername] = useState("");
-  const [registerPassword, setRegisterPassword] = useState("");
-  const [registerPasswordConfirm, setRegisterPasswordConfirm] = useState("");
+  const [isRegisterMode, setIsRegisterMode] = useState(false);
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [passwordConfirm, setPasswordConfirm] = useState("");
   const [isLoading, setIsLoading] = useState(false);
 
   const handleLoginSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (loginUsername && loginPassword) {
+    if (username && password) {
       setIsLoading(true);
-      console.log("Login attempt:", loginUsername);
-      onLogin(loginUsername, loginPassword);
+      console.log("Login attempt:", username);
+      onLogin(username, password);
       setTimeout(() => setIsLoading(false), 1000);
     }
   };
 
   const handleRegisterSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (registerUsername && registerPassword && registerPassword === registerPasswordConfirm) {
+    if (username && password && password === passwordConfirm) {
       setIsLoading(true);
-      console.log("Register attempt:", registerUsername);
-      onRegister(registerUsername, registerPassword);
+      console.log("Register attempt:", username);
+      onRegister(username, password);
       setTimeout(() => setIsLoading(false), 1000);
     }
+  };
+
+  const toggleMode = () => {
+    setIsRegisterMode(!isRegisterMode);
+    setUsername("");
+    setPassword("");
+    setPasswordConfirm("");
   };
 
   return (
@@ -51,107 +56,84 @@ export default function LoginPage({ onLogin, onRegister }: LoginPageProps) {
           <div>
             <CardTitle className="text-2xl font-bold">ブックマークマネージャー</CardTitle>
             <CardDescription className="mt-2">
-              開いているタブを整理しましょう
+              {isRegisterMode ? "アカウントを作成" : "ログインして開いているタブを整理しましょう"}
             </CardDescription>
           </div>
         </CardHeader>
         <CardContent>
-          <Tabs defaultValue="login" className="w-full">
-            <TabsList className="grid w-full grid-cols-2">
-              <TabsTrigger value="login" data-testid="tab-login">ログイン</TabsTrigger>
-              <TabsTrigger value="register" data-testid="tab-register">新規登録</TabsTrigger>
-            </TabsList>
-            
-            <TabsContent value="login" className="mt-4">
-              <form onSubmit={handleLoginSubmit} className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="login-username">ユーザー名</Label>
-                  <Input
-                    id="login-username"
-                    type="text"
-                    placeholder="username"
-                    value={loginUsername}
-                    onChange={(e) => setLoginUsername(e.target.value)}
-                    required
-                    data-testid="input-login-username"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="login-password">パスワード</Label>
-                  <Input
-                    id="login-password"
-                    type="password"
-                    placeholder="••••••••"
-                    value={loginPassword}
-                    onChange={(e) => setLoginPassword(e.target.value)}
-                    required
-                    data-testid="input-login-password"
-                  />
-                </div>
-                <Button
-                  type="submit"
-                  className="w-full"
-                  disabled={isLoading || !loginUsername || !loginPassword}
-                  data-testid="button-login"
-                >
-                  {isLoading ? "ログイン中..." : "ログイン"}
-                </Button>
-              </form>
-            </TabsContent>
-            
-            <TabsContent value="register" className="mt-4">
-              <form onSubmit={handleRegisterSubmit} className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="register-username">ユーザー名</Label>
-                  <Input
-                    id="register-username"
-                    type="text"
-                    placeholder="username"
-                    value={registerUsername}
-                    onChange={(e) => setRegisterUsername(e.target.value)}
-                    required
-                    data-testid="input-register-username"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="register-password">パスワード</Label>
-                  <Input
-                    id="register-password"
-                    type="password"
-                    placeholder="••••••••"
-                    value={registerPassword}
-                    onChange={(e) => setRegisterPassword(e.target.value)}
-                    required
-                    data-testid="input-register-password"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="register-password-confirm">パスワード（確認）</Label>
-                  <Input
-                    id="register-password-confirm"
-                    type="password"
-                    placeholder="••••••••"
-                    value={registerPasswordConfirm}
-                    onChange={(e) => setRegisterPasswordConfirm(e.target.value)}
-                    required
-                    data-testid="input-register-password-confirm"
-                  />
-                  {registerPassword && registerPasswordConfirm && registerPassword !== registerPasswordConfirm && (
-                    <p className="text-xs text-destructive">パスワードが一致しません</p>
-                  )}
-                </div>
-                <Button
-                  type="submit"
-                  className="w-full"
-                  disabled={isLoading || !registerUsername || !registerPassword || registerPassword !== registerPasswordConfirm}
-                  data-testid="button-register"
-                >
-                  {isLoading ? "登録中..." : "新規登録"}
-                </Button>
-              </form>
-            </TabsContent>
-          </Tabs>
+          <form onSubmit={isRegisterMode ? handleRegisterSubmit : handleLoginSubmit} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="username">ユーザー名</Label>
+              <Input
+                id="username"
+                type="text"
+                placeholder="username"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                required
+                data-testid={isRegisterMode ? "input-register-username" : "input-login-username"}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="password">パスワード</Label>
+              <Input
+                id="password"
+                type="password"
+                placeholder="••••••••"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                data-testid={isRegisterMode ? "input-register-password" : "input-login-password"}
+              />
+            </div>
+            {isRegisterMode && (
+              <div className="space-y-2">
+                <Label htmlFor="password-confirm">パスワード（確認）</Label>
+                <Input
+                  id="password-confirm"
+                  type="password"
+                  placeholder="••••••••"
+                  value={passwordConfirm}
+                  onChange={(e) => setPasswordConfirm(e.target.value)}
+                  required
+                  data-testid="input-register-password-confirm"
+                />
+                {password && passwordConfirm && password !== passwordConfirm && (
+                  <p className="text-xs text-destructive">パスワードが一致しません</p>
+                )}
+              </div>
+            )}
+            <Button
+              type="submit"
+              className="w-full"
+              disabled={
+                isLoading ||
+                !username ||
+                !password ||
+                (isRegisterMode && password !== passwordConfirm)
+              }
+              data-testid={isRegisterMode ? "button-register" : "button-login"}
+            >
+              {isLoading
+                ? isRegisterMode
+                  ? "登録中..."
+                  : "ログイン中..."
+                : isRegisterMode
+                ? "新規登録"
+                : "ログイン"}
+            </Button>
+          </form>
         </CardContent>
+        <CardFooter className="flex justify-center">
+          <Button
+            variant="link"
+            onClick={toggleMode}
+            className="text-sm"
+            data-testid="button-toggle-mode"
+          >
+            {isRegisterMode ? "アカウントをお持ちの方はこちら" : "アカウントをお持ちでない方はこちら"}
+          </Button>
+        </CardFooter>
       </Card>
     </div>
   );
