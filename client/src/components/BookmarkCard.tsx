@@ -68,7 +68,7 @@ export default function BookmarkCard({ bookmark, onUpdateNotes, onDelete }: Book
           <img
             src={bookmark.thumbnail}
             alt={bookmark.title}
-            className="w-[50px] h-[50px] object-cover rounded-sm bg-muted"
+            className="w-[70px] h-[70px] object-cover rounded-sm bg-muted"
             data-testid={`img-thumbnail-${bookmark.id}`}
           />
         </div>
@@ -105,7 +105,7 @@ export default function BookmarkCard({ bookmark, onUpdateNotes, onDelete }: Book
                     value={notes}
                     onChange={(e) => setNotes(e.target.value)}
                     placeholder="メモを追加..."
-                    className="min-h-[4.5rem] resize-none text-xs rounded-sm"
+                    className="h-[3.375rem] resize-none text-xs rounded-sm leading-[1.125rem]"
                     autoFocus
                     data-testid={`textarea-notes-${bookmark.id}`}
                   />
@@ -126,11 +126,11 @@ export default function BookmarkCard({ bookmark, onUpdateNotes, onDelete }: Book
                   </div>
                 </div>
               ) : (
-                bookmark.notes && (
-                  <p className="text-xs text-muted-foreground line-clamp-3 mt-0.5 whitespace-pre-wrap" data-testid={`text-notes-${bookmark.id}`}>
-                    {bookmark.notes}
+                <div className="h-[3.375rem] mt-0.5 overflow-hidden">
+                  <p className="text-xs text-muted-foreground whitespace-pre-wrap leading-[1.125rem]" data-testid={`text-notes-${bookmark.id}`}>
+                    {bookmark.notes || ''}
                   </p>
-                )
+                </div>
               )}
             </div>
             
