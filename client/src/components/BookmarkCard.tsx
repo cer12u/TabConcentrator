@@ -76,7 +76,7 @@ export default function BookmarkCard({ bookmark, onUpdateNotes, onDelete }: Book
         <div className="flex-1 min-w-0">
           <div className="flex items-start justify-between gap-2">
             <div className="flex-1 min-w-0">
-              <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
                 <a
                   href={bookmark.url}
                   target="_blank"
