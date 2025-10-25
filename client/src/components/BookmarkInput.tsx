@@ -52,9 +52,9 @@ export default function BookmarkInput({ onAddBookmark }: BookmarkInputProps) {
   };
 
   return (
-    <Card className="p-2">
+    <Card className="p-2 shadow-none border">
       <div
-        className={`border-2 border-dashed rounded-lg transition-all duration-200 ${
+        className={`border-2 border-dashed rounded-sm transition-all duration-200 ${
           isDragging ? "border-primary bg-primary/5" : "border-border"
         }`}
         onDragOver={handleDragOver}

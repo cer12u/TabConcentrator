@@ -62,13 +62,13 @@ export default function BookmarkCard({ bookmark, onUpdateNotes, onDelete }: Book
   const domain = getDomain(bookmark.url);
 
   return (
-    <Card className="p-2 hover-elevate" data-testid={`card-bookmark-${bookmark.id}`}>
+    <Card className="p-2 shadow-none border" data-testid={`card-bookmark-${bookmark.id}`}>
       <div className="flex gap-2">
         <div className="flex-shrink-0">
           <img
             src={bookmark.thumbnail}
             alt={bookmark.title}
-            className="w-[50px] h-[50px] object-cover rounded-md bg-muted"
+            className="w-[50px] h-[50px] object-cover rounded-sm bg-muted"
             data-testid={`img-thumbnail-${bookmark.id}`}
           />
         </div>
@@ -105,7 +105,7 @@ export default function BookmarkCard({ bookmark, onUpdateNotes, onDelete }: Book
                     value={notes}
                     onChange={(e) => setNotes(e.target.value)}
                     placeholder="メモを追加..."
-                    className="min-h-[2.5rem] resize-none text-xs"
+                    className="min-h-[4.5rem] resize-none text-xs rounded-sm"
                     autoFocus
                     data-testid={`textarea-notes-${bookmark.id}`}
                   />
@@ -127,7 +127,7 @@ export default function BookmarkCard({ bookmark, onUpdateNotes, onDelete }: Book
                 </div>
               ) : (
                 bookmark.notes && (
-                  <p className="text-xs text-muted-foreground line-clamp-2 mt-0.5" data-testid={`text-notes-${bookmark.id}`}>
+                  <p className="text-xs text-muted-foreground line-clamp-3 mt-0.5" data-testid={`text-notes-${bookmark.id}`}>
                     {bookmark.notes}
                   </p>
                 )
