@@ -51,25 +51,71 @@ export default function BookmarkCard({ bookmark, onUpdateNotes, onDelete }: Book
   };
 
   return (
-    <Card className="p-6 hover-elevate" data-testid={`card-bookmark-${bookmark.id}`}>
-      <div className="flex gap-4">
+    <Card className="p-4 hover-elevate" data-testid={`card-bookmark-${bookmark.id}`}>
+      <div className="flex gap-3">
         <div className="flex-shrink-0">
           <img
             src={bookmark.thumbnail}
             alt={bookmark.title}
-            className="w-[120px] h-[80px] object-cover rounded-md bg-muted"
+            className="w-[60px] h-[60px] object-cover rounded-md bg-muted"
             data-testid={`img-thumbnail-${bookmark.id}`}
           />
         </div>
         
         <div className="flex-1 min-w-0">
-          <h3 className="text-base font-medium line-clamp-2 mb-1" data-testid={`text-title-${bookmark.id}`}>
-            {bookmark.title}
-          </h3>
+          <div className="flex items-start justify-between gap-2 mb-1">
+            <h3 className="text-sm font-medium line-clamp-1 flex-1" data-testid={`text-title-${bookmark.id}`}>
+              {bookmark.title}
+            </h3>
+            <div className="flex gap-1 flex-shrink-0">
+              <Button
+                size="icon"
+                variant="ghost"
+                className="h-7 w-7"
+                onClick={() => setIsEditing(true)}
+                data-testid={`button-edit-${bookmark.id}`}
+              >
+                <Edit2 className="h-3.5 w-3.5" />
+              </Button>
+              
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="h-7 w-7"
+                    data-testid={`button-delete-${bookmark.id}`}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>ブックマークを削除しますか？</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      この操作は取り消せません。このブックマークとメモが完全に削除されます。
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel data-testid={`button-cancel-delete-${bookmark.id}`}>
+                      キャンセル
+                    </AlertDialogCancel>
+                    <AlertDialogAction
+                      onClick={handleDelete}
+                      className="bg-destructive text-destructive-foreground hover-elevate"
+                      data-testid={`button-confirm-delete-${bookmark.id}`}
+                    >
+                      削除
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            </div>
+          </div>
           
-          <div className="flex items-center gap-2 mb-3">
+          <div className="flex items-center gap-1.5 mb-2">
             {bookmark.favicon && (
-              <img src={bookmark.favicon} alt="" className="w-4 h-4" />
+              <img src={bookmark.favicon} alt="" className="w-3 h-3" />
             )}
             <a
               href={bookmark.url}
@@ -83,18 +129,18 @@ export default function BookmarkCard({ bookmark, onUpdateNotes, onDelete }: Book
           </div>
           
           {isEditing ? (
-            <div className="space-y-3">
+            <div className="space-y-2">
               <Textarea
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
                 placeholder="メモを追加..."
-                className="min-h-24 resize-none"
+                className="min-h-[3rem] resize-none text-sm"
                 autoFocus
                 data-testid={`textarea-notes-${bookmark.id}`}
               />
               <div className="flex gap-2">
                 <Button size="sm" onClick={handleSave} data-testid={`button-save-${bookmark.id}`}>
-                  <Save className="h-3 w-3 mr-2" />
+                  <Save className="h-3 w-3 mr-1.5" />
                   保存
                 </Button>
                 <Button
@@ -103,63 +149,17 @@ export default function BookmarkCard({ bookmark, onUpdateNotes, onDelete }: Book
                   onClick={handleCancel}
                   data-testid={`button-cancel-${bookmark.id}`}
                 >
-                  <X className="h-3 w-3 mr-2" />
+                  <X className="h-3 w-3 mr-1.5" />
                   キャンセル
                 </Button>
               </div>
             </div>
           ) : (
-            <>
-              {bookmark.notes && (
-                <p className="text-sm text-foreground mb-3" data-testid={`text-notes-${bookmark.id}`}>
-                  {bookmark.notes}
-                </p>
-              )}
-              <div className="flex gap-2">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => setIsEditing(true)}
-                  data-testid={`button-edit-${bookmark.id}`}
-                >
-                  <Edit2 className="h-3 w-3 mr-2" />
-                  {bookmark.notes ? "編集" : "メモを追加"}
-                </Button>
-                
-                <AlertDialog>
-                  <AlertDialogTrigger asChild>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      data-testid={`button-delete-${bookmark.id}`}
-                    >
-                      <Trash2 className="h-3 w-3 mr-2" />
-                      削除
-                    </Button>
-                  </AlertDialogTrigger>
-                  <AlertDialogContent>
-                    <AlertDialogHeader>
-                      <AlertDialogTitle>ブックマークを削除しますか？</AlertDialogTitle>
-                      <AlertDialogDescription>
-                        この操作は取り消せません。このブックマークとメモが完全に削除されます。
-                      </AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter>
-                      <AlertDialogCancel data-testid={`button-cancel-delete-${bookmark.id}`}>
-                        キャンセル
-                      </AlertDialogCancel>
-                      <AlertDialogAction
-                        onClick={handleDelete}
-                        className="bg-destructive text-destructive-foreground hover-elevate"
-                        data-testid={`button-confirm-delete-${bookmark.id}`}
-                      >
-                        削除
-                      </AlertDialogAction>
-                    </AlertDialogFooter>
-                  </AlertDialogContent>
-                </AlertDialog>
-              </div>
-            </>
+            bookmark.notes && (
+              <p className="text-sm text-foreground line-clamp-2" data-testid={`text-notes-${bookmark.id}`}>
+                {bookmark.notes}
+              </p>
+            )
           )}
         </div>
       </div>
