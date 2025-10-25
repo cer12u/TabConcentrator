@@ -44,6 +44,13 @@ export default function Home() {
     setIsLoggedIn(true);
   };
 
+  const handleRegister = (username: string, password: string) => {
+    console.log("Register:", username, password);
+    // todo: remove mock functionality
+    setUser({ name: username, avatar: `https://via.placeholder.com/32/3b82f6/fff?text=${username.charAt(0)}` });
+    setIsLoggedIn(true);
+  };
+
   const handleLogout = () => {
     console.log("Logout");
     setIsLoggedIn(false);
@@ -75,7 +82,7 @@ export default function Home() {
   };
 
   if (!isLoggedIn) {
-    return <LoginPage onLogin={handleLogin} />;
+    return <LoginPage onLogin={handleLogin} onRegister={handleRegister} />;
   }
 
   return (

@@ -5,5 +5,9 @@ export default function LoginPageExample() {
     console.log('Login with:', username, password);
   };
 
-  return <LoginPage onLogin={handleLogin} />;
+  const handleRegister = (username: string, password: string) => {
+    console.log('Register with:', username, password);
+  };
+
+  return <LoginPage onLogin={handleLogin} onRegister={handleRegister} />;
 }
