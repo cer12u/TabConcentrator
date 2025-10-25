@@ -30,6 +30,15 @@ interface BookmarkCardProps {
   onDelete: (id: string) => void;
 }
 
+function getDomain(url: string): string {
+  try {
+    const urlObj = new URL(url);
+    return urlObj.hostname;
+  } catch {
+    return url;
+  }
+}
+
 export default function BookmarkCard({ bookmark, onUpdateNotes, onDelete }: BookmarkCardProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [notes, setNotes] = useState(bookmark.notes);
@@ -50,32 +59,90 @@ export default function BookmarkCard({ bookmark, onUpdateNotes, onDelete }: Book
     onDelete(bookmark.id);
   };
 
+  const domain = getDomain(bookmark.url);
+
   return (
-    <Card className="p-4 hover-elevate" data-testid={`card-bookmark-${bookmark.id}`}>
-      <div className="flex gap-3">
+    <Card className="p-2 hover-elevate" data-testid={`card-bookmark-${bookmark.id}`}>
+      <div className="flex gap-2">
         <div className="flex-shrink-0">
           <img
             src={bookmark.thumbnail}
             alt={bookmark.title}
-            className="w-[60px] h-[60px] object-cover rounded-md bg-muted"
+            className="w-[50px] h-[50px] object-cover rounded-md bg-muted"
             data-testid={`img-thumbnail-${bookmark.id}`}
           />
         </div>
         
         <div className="flex-1 min-w-0">
-          <div className="flex items-start justify-between gap-2 mb-1">
-            <h3 className="text-sm font-medium line-clamp-1 flex-1" data-testid={`text-title-${bookmark.id}`}>
-              {bookmark.title}
-            </h3>
-            <div className="flex gap-1 flex-shrink-0">
+          <div className="flex items-start justify-between gap-2">
+            <div className="flex-1 min-w-0">
+              <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                <a
+                  href={bookmark.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-sm font-medium hover:text-primary truncate"
+                  data-testid={`text-title-${bookmark.id}`}
+                >
+                  {bookmark.title}
+                </a>
+                <div className="flex items-center gap-1 flex-shrink-0">
+                  {bookmark.favicon && (
+                    <img src={bookmark.favicon} alt="" className="w-3 h-3" />
+                  )}
+                  <span
+                    className="text-xs font-mono text-muted-foreground"
+                    data-testid={`text-domain-${bookmark.id}`}
+                  >
+                    {domain}
+                  </span>
+                </div>
+              </div>
+              
+              {isEditing ? (
+                <div className="space-y-1.5 mt-1">
+                  <Textarea
+                    value={notes}
+                    onChange={(e) => setNotes(e.target.value)}
+                    placeholder="メモを追加..."
+                    className="min-h-[2.5rem] resize-none text-xs"
+                    autoFocus
+                    data-testid={`textarea-notes-${bookmark.id}`}
+                  />
+                  <div className="flex gap-1.5">
+                    <Button size="sm" onClick={handleSave} data-testid={`button-save-${bookmark.id}`}>
+                      <Save className="h-3 w-3 mr-1" />
+                      保存
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={handleCancel}
+                      data-testid={`button-cancel-${bookmark.id}`}
+                    >
+                      <X className="h-3 w-3 mr-1" />
+                      キャンセル
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                bookmark.notes && (
+                  <p className="text-xs text-muted-foreground line-clamp-2 mt-0.5" data-testid={`text-notes-${bookmark.id}`}>
+                    {bookmark.notes}
+                  </p>
+                )
+              )}
+            </div>
+            
+            <div className="flex gap-0.5 flex-shrink-0">
               <Button
                 size="icon"
                 variant="ghost"
-                className="h-7 w-7"
-                onClick={() => setIsEditing(true)}
+                className="h-6 w-6"
+                onClick={() => setIsEditing(!isEditing)}
                 data-testid={`button-edit-${bookmark.id}`}
               >
-                <Edit2 className="h-3.5 w-3.5" />
+                <Edit2 className="h-3 w-3" />
               </Button>
               
               <AlertDialog>
@@ -83,10 +150,10 @@ export default function BookmarkCard({ bookmark, onUpdateNotes, onDelete }: Book
                   <Button
                     size="icon"
                     variant="ghost"
-                    className="h-7 w-7"
+                    className="h-6 w-6"
                     data-testid={`button-delete-${bookmark.id}`}
                   >
-                    <Trash2 className="h-3.5 w-3.5" />
+                    <Trash2 className="h-3 w-3" />
                   </Button>
                 </AlertDialogTrigger>
                 <AlertDialogContent>
@@ -112,55 +179,6 @@ export default function BookmarkCard({ bookmark, onUpdateNotes, onDelete }: Book
               </AlertDialog>
             </div>
           </div>
-          
-          <div className="flex items-center gap-1.5 mb-2">
-            {bookmark.favicon && (
-              <img src={bookmark.favicon} alt="" className="w-3 h-3" />
-            )}
-            <a
-              href={bookmark.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-xs font-mono text-muted-foreground hover:text-foreground truncate"
-              data-testid={`link-url-${bookmark.id}`}
-            >
-              {bookmark.url}
-            </a>
-          </div>
-          
-          {isEditing ? (
-            <div className="space-y-2">
-              <Textarea
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                placeholder="メモを追加..."
-                className="min-h-[3rem] resize-none text-sm"
-                autoFocus
-                data-testid={`textarea-notes-${bookmark.id}`}
-              />
-              <div className="flex gap-2">
-                <Button size="sm" onClick={handleSave} data-testid={`button-save-${bookmark.id}`}>
-                  <Save className="h-3 w-3 mr-1.5" />
-                  保存
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={handleCancel}
-                  data-testid={`button-cancel-${bookmark.id}`}
-                >
-                  <X className="h-3 w-3 mr-1.5" />
-                  キャンセル
-                </Button>
-              </div>
-            </div>
-          ) : (
-            bookmark.notes && (
-              <p className="text-sm text-foreground line-clamp-2" data-testid={`text-notes-${bookmark.id}`}>
-                {bookmark.notes}
-              </p>
-            )
-          )}
         </div>
       </div>
     </Card>

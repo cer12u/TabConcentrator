@@ -52,7 +52,7 @@ export default function BookmarkInput({ onAddBookmark }: BookmarkInputProps) {
   };
 
   return (
-    <Card className="p-4">
+    <Card className="p-2">
       <div
         className={`border-2 border-dashed rounded-lg transition-all duration-200 ${
           isDragging ? "border-primary bg-primary/5" : "border-border"
@@ -62,7 +62,7 @@ export default function BookmarkInput({ onAddBookmark }: BookmarkInputProps) {
         onDrop={handleDrop}
         onClick={handleDropZoneClick}
       >
-        <div className="p-3">
+        <div className="p-2">
           <form onSubmit={handleSubmit}>
             <div className="flex gap-2 items-center">
               <Link2 className="h-4 w-4 text-muted-foreground flex-shrink-0" />
@@ -72,7 +72,7 @@ export default function BookmarkInput({ onAddBookmark }: BookmarkInputProps) {
                 placeholder="URLをドラッグ&ドロップまたは入力"
                 value={url}
                 onChange={(e) => setUrl(e.target.value)}
-                className="flex-1"
+                className="flex-1 h-8"
                 data-testid="input-bookmark-url"
               />
               <Button

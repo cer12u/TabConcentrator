@@ -82,14 +82,14 @@ export default function Home() {
     <div className="min-h-screen bg-background">
       <Header user={user} onLogout={handleLogout} />
       
-      <main className="max-w-4xl mx-auto px-6 py-8">
-        <div className="space-y-6">
+      <main className="max-w-4xl mx-auto px-4 py-4">
+        <div className="space-y-3">
           <BookmarkInput onAddBookmark={handleAddBookmark} />
           
           {bookmarks.length === 0 ? (
             <EmptyState />
           ) : (
-            <div className="space-y-4" data-testid="bookmark-list">
+            <div className="space-y-2" data-testid="bookmark-list">
               {bookmarks.map((bookmark) => (
                 <BookmarkCard
                   key={bookmark.id}
