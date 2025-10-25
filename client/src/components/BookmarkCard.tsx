@@ -127,7 +127,7 @@ export default function BookmarkCard({ bookmark, onUpdateNotes, onDelete }: Book
                 </div>
               ) : (
                 bookmark.notes && (
-                  <p className="text-xs text-muted-foreground line-clamp-3 mt-0.5" data-testid={`text-notes-${bookmark.id}`}>
+                  <p className="text-xs text-muted-foreground line-clamp-3 mt-0.5 whitespace-pre-wrap" data-testid={`text-notes-${bookmark.id}`}>
                     {bookmark.notes}
                   </p>
                 )
