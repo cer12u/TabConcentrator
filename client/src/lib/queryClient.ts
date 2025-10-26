@@ -1,5 +1,28 @@
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
 
+let csrfToken: string | null = null;
+
+async function fetchCSRFToken(forceRefresh = false): Promise<string> {
+  if (csrfToken && !forceRefresh) return csrfToken;
+  
+  try {
+    const res = await fetch("/api/csrf-token", {
+      credentials: "include",
+    });
+    const data = await res.json();
+    csrfToken = data.csrfToken;
+    return csrfToken!;
+  } catch (error) {
+    console.error("Failed to fetch CSRF token:", error);
+    return "";
+  }
+}
+
+// Reset CSRF token cache (call after logout)
+export function resetCSRFToken() {
+  csrfToken = null;
+}
+
 async function throwIfResNotOk(res: Response) {
   if (!res.ok) {
     const text = (await res.text()) || res.statusText;
@@ -12,12 +35,38 @@ export async function apiRequest(
   url: string,
   data?: unknown | undefined,
 ): Promise<Response> {
+  const token = await fetchCSRFToken();
+  
+  const headers: Record<string, string> = {
+    ...(data ? { "Content-Type": "application/json" } : {}),
+    ...(token ? { "X-CSRF-Token": token } : {}),
+  };
+  
   const res = await fetch(url, {
     method,
-    headers: data ? { "Content-Type": "application/json" } : {},
+    headers,
     body: data ? JSON.stringify(data) : undefined,
     credentials: "include",
   });
+
+  // If 403, try refreshing CSRF token once
+  if (res.status === 403 && token) {
+    const newToken = await fetchCSRFToken(true);
+    const retryHeaders = {
+      ...(data ? { "Content-Type": "application/json" } : {}),
+      ...(newToken ? { "X-CSRF-Token": newToken } : {}),
+    };
+    
+    const retryRes = await fetch(url, {
+      method,
+      headers: retryHeaders,
+      body: data ? JSON.stringify(data) : undefined,
+      credentials: "include",
+    });
+    
+    await throwIfResNotOk(retryRes);
+    return retryRes;
+  }
 
   await throwIfResNotOk(res);
   return res;

@@ -3,23 +3,32 @@ import { createServer, type Server } from "http";
 import session from "express-session";
 import createMemoryStore from "memorystore";
 import { z } from "zod";
+import bcrypt from "bcrypt";
+import { randomBytes } from "crypto";
 import { storage } from "./storage";
 import { insertUserSchema, insertBookmarkSchema, insertCollectionSchema } from "@shared/schema";
 import { fromZodError } from "zod-validation-error";
 import { fetchImageAsBase64, isBase64Image, isHttpUrl } from "./utils/imageUtils";
 
-const MemoryStore = createMemoryStore(session);
+const SALT_ROUNDS = 10;
 
 declare module "express-session" {
   interface SessionData {
     userId?: string;
+    csrfToken?: string;
   }
 }
 
+const MemoryStore = createMemoryStore(session);
+
 export async function registerRoutes(app: Express): Promise<Server> {
+  if (!process.env.SESSION_SECRET) {
+    throw new Error("SESSION_SECRET environment variable is required");
+  }
+
   app.use(
     session({
-      secret: process.env.SESSION_SECRET || "bookmark-manager-secret-key",
+      secret: process.env.SESSION_SECRET,
       resave: false,
       saveUninitialized: false,
       store: new MemoryStore({
@@ -29,9 +38,48 @@ export async function registerRoutes(app: Express): Promise<Server> {
         secure: process.env.NODE_ENV === "production",
         httpOnly: true,
         maxAge: 7 * 24 * 60 * 60 * 1000,
+        sameSite: "lax",
       },
     })
   );
+
+  // CSRF token middleware - generate token for all sessions
+  app.use((req, res, next) => {
+    if (!req.session.csrfToken) {
+      req.session.csrfToken = randomBytes(32).toString('hex');
+    }
+    next();
+  });
+
+  // Provide CSRF token endpoint (must be before CSRF validation)
+  app.get("/api/csrf-token", (req, res) => {
+    res.json({ csrfToken: req.session.csrfToken });
+  });
+
+  // CSRF validation middleware for state-changing methods only
+  const validateCSRF = (req: any, res: any, next: any) => {
+    // Skip validation for safe methods
+    if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') {
+      return next();
+    }
+    
+    // Skip validation for CSRF token endpoint itself
+    if (req.path === '/api/csrf-token') {
+      return next();
+    }
+    
+    const tokenFromHeader = req.headers['x-csrf-token'];
+    const sessionToken = req.session.csrfToken;
+    
+    if (!tokenFromHeader || !sessionToken || tokenFromHeader !== sessionToken) {
+      return res.status(403).json({ error: "Invalid CSRF token" });
+    }
+    
+    next();
+  };
+
+  // Apply CSRF validation to all /api routes except those explicitly handled above
+  app.use('/api', validateCSRF);
 
   app.post("/api/auth/register", async (req, res) => {
     try {
@@ -47,7 +95,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "ユーザー名は既に使用されています" });
       }
 
-      const user = await storage.createUser({ username, password });
+      const hashedPassword = await bcrypt.hash(password, SALT_ROUNDS);
+      const user = await storage.createUser({ username, password: hashedPassword });
 
       req.session.userId = user.id;
       
@@ -71,7 +120,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { username, password } = result.data;
 
       const user = await storage.getUserByUsername(username);
-      if (!user || user.password !== password) {
+      if (!user) {
+        return res.status(401).json({ error: "ユーザー名またはパスワードが正しくありません" });
+      }
+
+      const isPasswordValid = await bcrypt.compare(password, user.password);
+      if (!isPasswordValid) {
         return res.status(401).json({ error: "ユーザー名またはパスワードが正しくありません" });
       }
 

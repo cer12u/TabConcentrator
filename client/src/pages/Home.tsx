@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
-import { queryClient, apiRequest } from "@/lib/queryClient";
+import { queryClient, apiRequest, resetCSRFToken } from "@/lib/queryClient";
 import { Settings } from "lucide-react";
 import Header from "@/components/Header";
 import BookmarkInput from "@/components/BookmarkInput";
@@ -109,6 +109,7 @@ export default function Home() {
       return res.json();
     },
     onSuccess: () => {
+      resetCSRFToken();
       queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
       queryClient.invalidateQueries({ queryKey: ["/api/collections"] });
       queryClient.invalidateQueries({ queryKey: ["/api/bookmarks"] });
