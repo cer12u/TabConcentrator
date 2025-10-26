@@ -135,12 +135,19 @@ Preferred communication style: Simple, everyday language.
 - **Favicon D&D Feature**: Enhanced favicon input with drag-and-drop support
   - FaviconInput component accepts URL text drops, image file drops (converted to base64), and manual URL input
   - Visual feedback during drag-over with upload button fallback
+- **Self-Hosted Image Storage**: Eliminated external service dependencies
+  - Server-side image download system (fetchImageAsBase64 utility)
+  - All images stored as base64 data URIs in database
+  - External URLs never persisted - downloaded and converted to base64 on save
+  - Failed downloads return error instead of storing external URLs
+  - 10-second timeout with content-type validation
+  - Bookmarks created with favicon=null by default (no automatic downloads)
 - **Tab Design Improvements**: Index-style tabs with bottom border emphasis
   - Active tab highlighted with primary-colored bottom border (2px)
   - Clean, minimalist design without inline action buttons
 - **Error Message Display**: Login/registration forms now display error messages directly in the UI
 - **Security Fix**: PATCH /api/bookmarks/:id now only allows updating `memo` and `favicon` fields
-- **Testing**: Complete E2E test coverage for authentication, collections, bookmark CRUD, favicon editing, settings dialog, and default tab persistence
+- **Testing**: Complete E2E test coverage for authentication, collections, bookmark CRUD, favicon editing, settings dialog, default tab persistence, and self-hosted image storage
 
 ### External Dependencies
 
