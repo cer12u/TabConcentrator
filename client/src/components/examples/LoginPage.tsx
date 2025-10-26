@@ -1,12 +1,12 @@
 import LoginPage from '../LoginPage';
 
 export default function LoginPageExample() {
-  const handleLogin = (username: string, password: string) => {
+  const handleLogin = async (username: string, password: string) => {
     console.log('Login with:', username, password);
   };
 
-  const handleRegister = (username: string, password: string) => {
-    console.log('Register with:', username, password);
+  const handleRegister = async (username: string, email: string, password: string) => {
+    console.log('Register with:', username, email, password);
   };
 
   return <LoginPage onLogin={handleLogin} onRegister={handleRegister} />;

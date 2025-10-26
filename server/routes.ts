@@ -27,6 +27,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     throw new Error("SESSION_SECRET environment variable is required");
   }
 
+  const appBaseUrl = process.env.APP_BASE_URL;
+  if (!appBaseUrl) {
+    throw new Error("APP_BASE_URL environment variable is required");
+  }
+
   app.use(
     session({
       secret: process.env.SESSION_SECRET,
@@ -112,8 +117,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       await storage.updateUser(user.id, { verificationToken });
 
-      const verificationLink = `${req.protocol}://${req.get('host')}/verify-email?token=${verificationToken}`;
-      const emailHtml = generateVerificationEmail(username, verificationLink);
+      const verificationUrl = new URL("/verify-email", appBaseUrl);
+      verificationUrl.searchParams.set("token", verificationToken);
+      const emailHtml = generateVerificationEmail(username, verificationUrl.toString());
       
       await sendEmail({
         to: email,
@@ -247,8 +253,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         resetTokenExpiry,
       });
 
-      const resetLink = `${req.protocol}://${req.get('host')}/reset-password?token=${resetToken}`;
-      const emailHtml = generatePasswordResetEmail(user.username, resetLink);
+      const resetUrl = new URL("/reset-password", appBaseUrl);
+      resetUrl.searchParams.set("token", resetToken);
+      const emailHtml = generatePasswordResetEmail(user.username, resetUrl.toString());
       
       await sendEmail({
         to: user.email,

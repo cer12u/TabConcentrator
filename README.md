@@ -73,6 +73,7 @@ npm install
 ```env
 DATABASE_URL=postgresql://user:password@host:port/database
 SESSION_SECRET=your-random-secret-key
+APP_BASE_URL=https://your-public-app-url
 ```
 
 4. データベースをセットアップ
