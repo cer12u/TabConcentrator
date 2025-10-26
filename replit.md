@@ -115,8 +115,9 @@ Preferred communication style: Simple, everyday language.
 
 **Security Features**:
 - **Password Security**: bcrypt hashing with SALT_ROUNDS=10, no plaintext storage
-- **Session Management**: SESSION_SECRET required, 7-day expiry, httpOnly cookies
-- **CSRF Protection**: sameSite: "lax" cookies, session-based tokens, validation on POST/PUT/PATCH/DELETE
+- **Session Management**: SESSION_SECRET required, 7-day expiry, httpOnly cookies, session regeneration on login/register
+- **Session Fixation Protection**: `req.session.regenerate()` called on successful authentication to prevent session fixation attacks
+- **CSRF Protection**: sameSite: "lax" cookies, session-based tokens with unconditional regeneration, validation on POST/PUT/PATCH/DELETE
 - **SSRF Protection**: 
   - Maximum image size: 5MB
   - Protocol whitelist: http/https only
@@ -127,9 +128,25 @@ Preferred communication style: Simple, everyday language.
 - **Error Handling**: Process crash prevention, minimal logging, no sensitive data in logs
 - **Cookie Security**: httpOnly, secure (in production), sameSite: "lax"
 
-**Authorization**: User-scoped data access - bookmarks and collections filtered by `userId` from session
+**Authorization**: 
+- User-scoped data access - bookmarks and collections filtered by `userId` from session
+- **Collection Ownership Validation**: Bookmark creation validates that collectionId belongs to authenticated user (prevents unauthorized cross-user collection access)
 
 ## Recent Changes
+
+### October 26, 2025 (Critical Security Fixes)
+- **[高] セッション固定攻撃の脆弱性を修正**
+  - ログイン/登録時に `req.session.regenerate()` でセッションIDを再生成
+  - 攻撃者が事前に発行したセッションIDを被害者に植え付ける攻撃を防止
+  - セッション再生成をPromiseでラップし、制御フローを適切に管理
+  - CSRFトークンも認証イベントごとに無条件で再生成
+  - 場所: server/routes.ts (登録API、ログインAPI)
+- **[中] collectionId所有者検証の追加**
+  - ブックマーク作成時にcollectionIdの存在と所有者を検証
+  - 他ユーザーのコレクションIDを指定できてしまう脆弱性を修正
+  - null/undefined の明示的なチェックを追加
+  - 場所: server/routes.ts:301-311 (ブックマーク作成API)
+- **テスト結果**: 全E2Eテストが成功、セキュリティ修正後も全機能が正常動作
 
 ### October 26, 2025 (Package Updates)
 - **Package Modernization**: Updated dependencies to latest compatible versions
