@@ -110,6 +110,85 @@ export async function registerRoutes(app: Express): Promise<Server> {
     });
   });
 
+  const requireAuth = (req: any, res: any, next: any) => {
+    if (!req.session.userId) {
+      return res.status(401).json({ error: "ログインしていません" });
+    }
+    next();
+  };
+
+  app.get("/api/bookmarks", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      const bookmarks = await storage.getBookmarksByUserId(userId);
+      res.json(bookmarks);
+    } catch (error) {
+      console.error("Get bookmarks error:", error);
+      res.status(500).json({ error: "ブックマークの取得に失敗しました" });
+    }
+  });
+
+  app.post("/api/bookmarks", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      const result = insertBookmarkSchema.safeParse({ ...req.body, userId });
+      
+      if (!result.success) {
+        return res.status(400).json({ error: fromZodError(result.error).message });
+      }
+
+      const bookmark = await storage.createBookmark(result.data);
+      res.json(bookmark);
+    } catch (error) {
+      console.error("Create bookmark error:", error);
+      res.status(500).json({ error: "ブックマークの作成に失敗しました" });
+    }
+  });
+
+  app.patch("/api/bookmarks/:id", requireAuth, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const userId = req.session.userId!;
+
+      const existingBookmark = await storage.getBookmark(id);
+      if (!existingBookmark) {
+        return res.status(404).json({ error: "ブックマークが見つかりません" });
+      }
+
+      if (existingBookmark.userId !== userId) {
+        return res.status(403).json({ error: "このブックマークを編集する権限がありません" });
+      }
+
+      const bookmark = await storage.updateBookmark(id, req.body);
+      res.json(bookmark);
+    } catch (error) {
+      console.error("Update bookmark error:", error);
+      res.status(500).json({ error: "ブックマークの更新に失敗しました" });
+    }
+  });
+
+  app.delete("/api/bookmarks/:id", requireAuth, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const userId = req.session.userId!;
+
+      const existingBookmark = await storage.getBookmark(id);
+      if (!existingBookmark) {
+        return res.status(404).json({ error: "ブックマークが見つかりません" });
+      }
+
+      if (existingBookmark.userId !== userId) {
+        return res.status(403).json({ error: "このブックマークを削除する権限がありません" });
+      }
+
+      await storage.deleteBookmark(id);
+      res.json({ message: "ブックマークを削除しました" });
+    } catch (error) {
+      console.error("Delete bookmark error:", error);
+      res.status(500).json({ error: "ブックマークの削除に失敗しました" });
+    }
+  });
+
   const httpServer = createServer(app);
 
   return httpServer;
