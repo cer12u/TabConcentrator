@@ -2,6 +2,13 @@ import { sql } from "drizzle-orm";
 import { pgTable, text, varchar, timestamp } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
+import {
+  USERNAME_MIN_LENGTH,
+  USERNAME_MAX_LENGTH,
+  PASSWORD_MIN_LENGTH,
+} from "./constants";
+
+export { USERNAME_MIN_LENGTH, USERNAME_MAX_LENGTH, PASSWORD_MIN_LENGTH } from "./constants";
 
 export const users = pgTable("users", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -19,7 +26,26 @@ export const insertUserSchema = createInsertSchema(users).pick({
   email: true,
   password: true,
 }).extend({
+  username: z
+    .string({ required_error: "ユーザー名を入力してください" })
+    .trim()
+    .min(USERNAME_MIN_LENGTH, `ユーザー名は${USERNAME_MIN_LENGTH}文字以上で入力してください`)
+    .max(USERNAME_MAX_LENGTH, `ユーザー名は${USERNAME_MAX_LENGTH}文字以下で入力してください`),
   email: z.string().email("有効なメールアドレスを入力してください"),
+  password: z
+    .string({ required_error: "パスワードを入力してください" })
+    .min(PASSWORD_MIN_LENGTH, `パスワードは${PASSWORD_MIN_LENGTH}文字以上で入力してください`),
+});
+
+export const loginSchema = z.object({
+  username: z
+    .string({ required_error: "ユーザー名を入力してください" })
+    .trim()
+    .min(1, "ユーザー名を入力してください")
+    .max(USERNAME_MAX_LENGTH, `ユーザー名は${USERNAME_MAX_LENGTH}文字以下で入力してください`),
+  password: z
+    .string({ required_error: "パスワードを入力してください" })
+    .min(1, "パスワードを入力してください"),
 });
 
 export type InsertUser = z.infer<typeof insertUserSchema>;

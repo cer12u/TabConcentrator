@@ -4,6 +4,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { apiRequest } from "@/lib/queryClient";
+import { PASSWORD_MIN_LENGTH, USERNAME_MIN_LENGTH } from "@shared/constants";
 
 interface LoginPageProps {
   onLogin: (username: string, password: string) => Promise<void>;
@@ -21,68 +23,94 @@ export default function LoginPage({ onLogin, onRegister }: LoginPageProps) {
   const [errorMessage, setErrorMessage] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
 
+  const trimmedUsername = username.trim();
+  const trimmedEmail = email.trim();
+
+  const isRegisterFormInvalid = isRegisterMode && (
+    trimmedUsername.length < USERNAME_MIN_LENGTH ||
+    !trimmedEmail ||
+    password.length < PASSWORD_MIN_LENGTH ||
+    password !== passwordConfirm
+  );
+
+  const isLoginFormInvalid = !isRegisterMode && (!trimmedUsername || !password);
+
   const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (username && password) {
-      setIsLoading(true);
-      setErrorMessage("");
-      try {
-        await onLogin(username, password);
-      } catch (error: any) {
-        setErrorMessage(error.message || "ログインに失敗しました");
-      } finally {
-        setIsLoading(false);
-      }
+    if (!trimmedUsername || !password) {
+      setErrorMessage("ユーザー名とパスワードを入力してください");
+      return;
+    }
+
+    setIsLoading(true);
+    setErrorMessage("");
+    setSuccessMessage("");
+    try {
+      await onLogin(trimmedUsername, password);
+      setUsername(trimmedUsername);
+    } catch (error: any) {
+      setErrorMessage(error.message || "ログインに失敗しました");
+    } finally {
+      setIsLoading(false);
     }
   };
 
   const handleRegisterSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (username && email && password && password === passwordConfirm) {
-      setIsLoading(true);
-      setErrorMessage("");
-      setSuccessMessage("");
-      try {
-        await onRegister(username, email, password);
-      } catch (error: any) {
-        setErrorMessage(error.message || "登録に失敗しました");
-      } finally {
-        setIsLoading(false);
-      }
+
+    if (trimmedUsername.length < USERNAME_MIN_LENGTH) {
+      setErrorMessage(`ユーザー名は${USERNAME_MIN_LENGTH}文字以上で入力してください`);
+      return;
+    }
+
+    if (!trimmedEmail) {
+      setErrorMessage("メールアドレスを入力してください");
+      return;
+    }
+
+    if (password.length < PASSWORD_MIN_LENGTH) {
+      setErrorMessage(`パスワードは${PASSWORD_MIN_LENGTH}文字以上で入力してください`);
+      return;
+    }
+
+    if (password !== passwordConfirm) {
+      setErrorMessage("パスワードが一致しません");
+      return;
+    }
+
+    setIsLoading(true);
+    setErrorMessage("");
+    setSuccessMessage("");
+    try {
+      await onRegister(trimmedUsername, trimmedEmail, password);
+      setUsername(trimmedUsername);
+      setEmail(trimmedEmail);
+    } catch (error: any) {
+      setErrorMessage(error.message || "登録に失敗しました");
+    } finally {
+      setIsLoading(false);
     }
   };
 
   const handleForgotPasswordSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (email) {
-      setIsLoading(true);
-      setErrorMessage("");
-      setSuccessMessage("");
-      try {
-        const csrfToken = document.cookie
-          .split('; ')
-          .find(row => row.startsWith('csrf-token='))
-          ?.split('=')[1];
+    if (!trimmedEmail) {
+      setErrorMessage("メールアドレスを入力してください");
+      return;
+    }
 
-        const res = await fetch("/api/auth/request-password-reset", {
-          method: "POST",
-          headers: { 
-            "Content-Type": "application/json",
-            "X-CSRF-Token": csrfToken || "",
-          },
-          body: JSON.stringify({ email }),
-          credentials: "include",
-        });
-        const data = await res.json();
-        if (!res.ok) {
-          throw new Error(data.error || "リセットメールの送信に失敗しました");
-        }
-        setSuccessMessage(data.message || "リセットメールを送信しました");
-      } catch (error: any) {
-        setErrorMessage(error.message || "リセットメールの送信に失敗しました");
-      } finally {
-        setIsLoading(false);
-      }
+    setIsLoading(true);
+    setErrorMessage("");
+    setSuccessMessage("");
+    try {
+      const res = await apiRequest("POST", "/api/auth/request-password-reset", { email: trimmedEmail });
+      const data = await res.json();
+      setSuccessMessage(data.message || "リセットメールを送信しました（アカウントが存在する場合）");
+      setEmail(trimmedEmail);
+    } catch (error: any) {
+      setErrorMessage(error.message || "リセットメールの送信に失敗しました");
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -168,7 +196,7 @@ export default function LoginPage({ onLogin, onRegister }: LoginPageProps) {
               <Button
                 type="submit"
                 className="w-full"
-                disabled={isLoading || !email}
+                disabled={isLoading || !trimmedEmail}
                 data-testid="button-forgot-password-submit"
               >
                 {isLoading ? "送信中..." : "リセットメールを送信"}
@@ -185,8 +213,16 @@ export default function LoginPage({ onLogin, onRegister }: LoginPageProps) {
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
                   required
+                  minLength={isRegisterMode ? USERNAME_MIN_LENGTH : undefined}
                   data-testid={isRegisterMode ? "input-register-username" : "input-login-username"}
                 />
+                {isRegisterMode &&
+                  trimmedUsername.length > 0 &&
+                  trimmedUsername.length < USERNAME_MIN_LENGTH && (
+                    <p className="text-xs text-destructive">
+                      {`ユーザー名は${USERNAME_MIN_LENGTH}文字以上で入力してください`}
+                    </p>
+                  )}
               </div>
               {isRegisterMode && (
                 <div className="space-y-2">
@@ -211,8 +247,16 @@ export default function LoginPage({ onLogin, onRegister }: LoginPageProps) {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   required
+                  minLength={isRegisterMode ? PASSWORD_MIN_LENGTH : undefined}
                   data-testid={isRegisterMode ? "input-register-password" : "input-login-password"}
                 />
+                {isRegisterMode &&
+                  password.length > 0 &&
+                  password.length < PASSWORD_MIN_LENGTH && (
+                    <p className="text-xs text-destructive">
+                      {`パスワードは${PASSWORD_MIN_LENGTH}文字以上で入力してください`}
+                    </p>
+                  )}
               </div>
               {isRegisterMode && (
                 <div className="space-y-2">
@@ -224,6 +268,7 @@ export default function LoginPage({ onLogin, onRegister }: LoginPageProps) {
                     value={passwordConfirm}
                     onChange={(e) => setPasswordConfirm(e.target.value)}
                     required
+                    minLength={PASSWORD_MIN_LENGTH}
                     data-testid="input-register-password-confirm"
                   />
                   {password && passwordConfirm && password !== passwordConfirm && (
@@ -234,12 +279,7 @@ export default function LoginPage({ onLogin, onRegister }: LoginPageProps) {
               <Button
                 type="submit"
                 className="w-full"
-                disabled={
-                  isLoading ||
-                  !username ||
-                  !password ||
-                  (isRegisterMode && (!email || password !== passwordConfirm))
-                }
+                disabled={isLoading || isRegisterFormInvalid || isLoginFormInvalid}
                 data-testid={isRegisterMode ? "button-register" : "button-login"}
               >
                 {isLoading

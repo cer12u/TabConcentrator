@@ -6,7 +6,7 @@ import { z } from "zod";
 import bcrypt from "bcrypt";
 import { randomBytes } from "crypto";
 import { storage } from "./storage";
-import { insertUserSchema, insertBookmarkSchema, insertCollectionSchema } from "@shared/schema";
+import { insertUserSchema, insertBookmarkSchema, insertCollectionSchema, loginSchema, PASSWORD_MIN_LENGTH } from "@shared/schema";
 import { fromZodError } from "zod-validation-error";
 import { fetchImageAsBase64, isBase64Image, isHttpUrl } from "./utils/imageUtils";
 import { sendEmail, generateVerificationEmail, generatePasswordResetEmail } from "./utils/emailService";
@@ -155,7 +155,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/auth/login", async (req, res) => {
     try {
-      const result = insertUserSchema.safeParse(req.body);
+      const result = loginSchema.safeParse(req.body);
       if (!result.success) {
         return res.status(400).json({ error: fromZodError(result.error).message });
       }
@@ -278,8 +278,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "トークンと新しいパスワードが必要です" });
       }
 
-      if (newPassword.length < 6) {
-        return res.status(400).json({ error: "パスワードは6文字以上である必要があります" });
+      if (newPassword.length < PASSWORD_MIN_LENGTH) {
+        return res.status(400).json({ error: `パスワードは${PASSWORD_MIN_LENGTH}文字以上である必要があります` });
       }
 
       const user = await storage.getUserByResetToken(token);

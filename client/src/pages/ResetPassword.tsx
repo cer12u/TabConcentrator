@@ -5,6 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { apiRequest } from "@/lib/queryClient";
+import { PASSWORD_MIN_LENGTH } from "@shared/constants";
 
 export default function ResetPassword() {
   const [, setLocation] = useLocation();
@@ -27,34 +29,32 @@ export default function ResetPassword() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (newPassword && confirmPassword && newPassword === confirmPassword) {
-      setIsLoading(true);
-      setErrorMessage("");
-      try {
-        const csrfToken = document.cookie
-          .split('; ')
-          .find(row => row.startsWith('csrf-token='))
-          ?.split('=')[1];
 
-        const res = await fetch("/api/auth/reset-password", {
-          method: "POST",
-          headers: { 
-            "Content-Type": "application/json",
-            "X-CSRF-Token": csrfToken || "",
-          },
-          body: JSON.stringify({ token, newPassword }),
-          credentials: "include",
-        });
-        const data = await res.json();
-        if (!res.ok) {
-          throw new Error(data.error || "パスワードのリセットに失敗しました");
-        }
-        setIsSuccess(true);
-      } catch (error: any) {
-        setErrorMessage(error.message || "パスワードのリセットに失敗しました");
-      } finally {
-        setIsLoading(false);
-      }
+    if (!token) {
+      setErrorMessage("無効なリセットリンクです");
+      return;
+    }
+
+    if (newPassword.length < PASSWORD_MIN_LENGTH) {
+      setErrorMessage(`パスワードは${PASSWORD_MIN_LENGTH}文字以上で入力してください`);
+      return;
+    }
+
+    if (newPassword !== confirmPassword) {
+      setErrorMessage("パスワードが一致しません");
+      return;
+    }
+
+    setIsLoading(true);
+    setErrorMessage("");
+    try {
+      const res = await apiRequest("POST", "/api/auth/reset-password", { token, newPassword });
+      await res.json();
+      setIsSuccess(true);
+    } catch (error: any) {
+      setErrorMessage(error.message || "パスワードのリセットに失敗しました");
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -128,10 +128,15 @@ export default function ResetPassword() {
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
                 required
-                minLength={6}
+                minLength={PASSWORD_MIN_LENGTH}
                 disabled={!token}
                 data-testid="input-new-password"
               />
+              {newPassword.length > 0 && newPassword.length < PASSWORD_MIN_LENGTH && (
+                <p className="text-xs text-destructive">
+                  {`パスワードは${PASSWORD_MIN_LENGTH}文字以上で入力してください`}
+                </p>
+              )}
             </div>
             <div className="space-y-2">
               <Label htmlFor="confirm-password">パスワード（確認）</Label>
@@ -142,7 +147,7 @@ export default function ResetPassword() {
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
                 required
-                minLength={6}
+                minLength={PASSWORD_MIN_LENGTH}
                 disabled={!token}
                 data-testid="input-confirm-password"
               />
@@ -156,8 +161,8 @@ export default function ResetPassword() {
               disabled={
                 isLoading ||
                 !token ||
-                !newPassword ||
-                !confirmPassword ||
+                newPassword.length < PASSWORD_MIN_LENGTH ||
+                confirmPassword.length < PASSWORD_MIN_LENGTH ||
                 newPassword !== confirmPassword
               }
               data-testid="button-reset-password"
