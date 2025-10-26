@@ -74,6 +74,7 @@ npm install
 DATABASE_URL=postgresql://user:password@host:port/database
 SESSION_SECRET=your-random-secret-key
 APP_BASE_URL=https://your-public-app-url
+RESEND_API_KEY=your-resend-api-key
 ```
 
 4. データベースをセットアップ
@@ -87,6 +88,43 @@ npm run dev
 ```
 
 アプリケーションは `http://localhost:5000` で起動します。
+
+## サーバレスデプロイ（AWS Lambda を例に）
+
+このリポジトリは Express アプリを AWS Lambda + API Gateway 上で動作させるためのエントリポイント `server/lambda.ts` を提供しています。低トラフィック時にコストを抑えたい場合は以下の構成が推奨です。
+
+### バックエンド API
+1. 本番ビルド
+   ```bash
+   npm run build
+   ```
+   生成物として `dist/index.js`（Express サーバー）と `client` のビルド済みアセットが作成されます。
+2. Lambda 用バンドル
+   - `esbuild` などで `server/lambda.ts` を Node.js 18 ランタイム向けにバンドルし、`node_modules` とともに ZIP 化します。
+   - 例：
+     ```bash
+     npx esbuild server/lambda.ts \
+       --bundle --platform=node --target=node18 \
+       --outfile=lambda/index.mjs
+     zip -r lambda.zip lambda node_modules dist shared client
+     ```
+   - Lambda のハンドラーには `lambda/index.handler` を指定します。
+3. API Gateway を REST / HTTP API として作成し、Lambda と統合します。環境変数は Lambda の設定または Systems Manager Parameter Store / Secrets Manager から読み込みます。
+
+### セッションとデータストア
+- セッションは PostgreSQL（`connect-pg-simple`）に永続化されるため、Lambda のコールドスタートやスケールアウト時でも維持されます。
+- ブックマークやユーザー情報も Drizzle 経由で PostgreSQL に保存されます（Neon や RDS/Aurora Serverless などを利用できます）。
+
+### フロントエンド配信
+- `npm run build` で生成される `dist/public` ディレクトリを S3 にアップロードし、CloudFront から配信します。
+- `APP_BASE_URL` は CloudFront の公開 URL に設定してください。
+
+### メール送信
+- `RESEND_API_KEY` を Lambda の環境変数に設定することで、Resend API をそのまま利用できます。
+
+### デプロイ後の確認
+- API Gateway 経由で `/api/csrf-token`, `/api/auth/register`, `/api/auth/login` が期待通り動作することを確認してください。
+- CloudFront 経由でフロントエンドにアクセスし、登録・ログイン・パスワードリセットのフローがサーバレス構成で正常に動くかを確認します。
 
 ## 使い方
 

@@ -1,5 +1,16 @@
-import { type User, type InsertUser, type Bookmark, type InsertBookmark, type Collection, type InsertCollection } from "@shared/schema";
-import { randomUUID } from "crypto";
+import {
+  bookmarks,
+  collections,
+  type Bookmark,
+  type Collection,
+  type InsertBookmark,
+  type InsertCollection,
+  type InsertUser,
+  type User,
+  users,
+} from "@shared/schema";
+import { db } from "./db";
+import { and, eq, isNull } from "drizzle-orm";
 
 export interface IStorage {
   getUser(id: string): Promise<User | undefined>;
@@ -9,13 +20,13 @@ export interface IStorage {
   getUserByResetToken(token: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
   updateUser(id: string, user: Partial<User>): Promise<User | undefined>;
-  
+
   getCollectionsByUserId(userId: string): Promise<Collection[]>;
   getCollection(id: string): Promise<Collection | undefined>;
   createCollection(collection: InsertCollection): Promise<Collection>;
   updateCollection(id: string, collection: Partial<InsertCollection>): Promise<Collection | undefined>;
   deleteCollection(id: string): Promise<boolean>;
-  
+
   getBookmarksByUserId(userId: string, collectionId?: string | null): Promise<Bookmark[]>;
   getBookmark(id: string): Promise<Bookmark | undefined>;
   createBookmark(bookmark: InsertBookmark): Promise<Bookmark>;
@@ -23,141 +34,131 @@ export interface IStorage {
   deleteBookmark(id: string): Promise<boolean>;
 }
 
-export class MemStorage implements IStorage {
-  private users: Map<string, User>;
-  private collections: Map<string, Collection>;
-  private bookmarks: Map<string, Bookmark>;
+function filterUndefined<T extends Record<string, unknown>>(input: T): Partial<T> {
+  return Object.fromEntries(
+    Object.entries(input).filter(([, value]) => value !== undefined),
+  ) as Partial<T>;
+}
 
-  constructor() {
-    this.users = new Map();
-    this.collections = new Map();
-    this.bookmarks = new Map();
-  }
-
+export class DbStorage implements IStorage {
   async getUser(id: string): Promise<User | undefined> {
-    return this.users.get(id);
+    return db.query.users.findFirst({ where: eq(users.id, id) });
   }
 
   async getUserByUsername(username: string): Promise<User | undefined> {
-    return Array.from(this.users.values()).find(
-      (user) => user.username === username,
-    );
+    return db.query.users.findFirst({ where: eq(users.username, username) });
   }
 
   async getUserByEmail(email: string): Promise<User | undefined> {
-    return Array.from(this.users.values()).find(
-      (user) => user.email === email,
-    );
+    return db.query.users.findFirst({ where: eq(users.email, email) });
   }
 
   async getUserByVerificationToken(token: string): Promise<User | undefined> {
-    return Array.from(this.users.values()).find(
-      (user) => user.verificationToken === token,
-    );
+    return db.query.users.findFirst({ where: eq(users.verificationToken, token) });
   }
 
   async getUserByResetToken(token: string): Promise<User | undefined> {
-    return Array.from(this.users.values()).find(
-      (user) => user.resetToken === token && user.resetTokenExpiry && user.resetTokenExpiry > new Date(),
-    );
+    const user = await db.query.users.findFirst({ where: eq(users.resetToken, token) });
+    if (!user) return undefined;
+    if (!user.resetTokenExpiry || user.resetTokenExpiry <= new Date()) {
+      return undefined;
+    }
+    return user;
   }
 
   async createUser(insertUser: InsertUser): Promise<User> {
-    const id = randomUUID();
-    const user: User = { 
-      ...insertUser, 
-      id,
-      emailVerified: null,
-      verificationToken: null,
-      resetToken: null,
-      resetTokenExpiry: null,
-    };
-    this.users.set(id, user);
+    const [user] = await db
+      .insert(users)
+      .values({
+        ...insertUser,
+      })
+      .returning();
     return user;
   }
 
   async updateUser(id: string, update: Partial<User>): Promise<User | undefined> {
-    const user = this.users.get(id);
-    if (!user) return undefined;
+    const filteredUpdate = filterUndefined(update);
+    if (Object.keys(filteredUpdate).length === 0) {
+      return this.getUser(id);
+    }
 
-    const updated: User = { ...user, ...update };
-    this.users.set(id, updated);
-    return updated;
+    const [user] = await db
+      .update(users)
+      .set(filteredUpdate)
+      .where(eq(users.id, id))
+      .returning();
+    return user;
   }
 
   async getCollectionsByUserId(userId: string): Promise<Collection[]> {
-    return Array.from(this.collections.values()).filter(
-      (collection) => collection.userId === userId,
-    );
+    return db.query.collections.findMany({ where: eq(collections.userId, userId) });
   }
 
   async getCollection(id: string): Promise<Collection | undefined> {
-    return this.collections.get(id);
+    return db.query.collections.findFirst({ where: eq(collections.id, id) });
   }
 
-  async createCollection(insertCollection: InsertCollection): Promise<Collection> {
-    const id = randomUUID();
-    const collection: Collection = {
-      userId: insertCollection.userId,
-      name: insertCollection.name,
-      id,
-      createdAt: new Date(),
-    };
-    this.collections.set(id, collection);
-    return collection;
+  async createCollection(collection: InsertCollection): Promise<Collection> {
+    const [created] = await db.insert(collections).values(collection).returning();
+    return created;
   }
 
   async updateCollection(
     id: string,
     update: Partial<InsertCollection>,
   ): Promise<Collection | undefined> {
-    const collection = this.collections.get(id);
-    if (!collection) return undefined;
+    const filteredUpdate = filterUndefined(update);
+    if (Object.keys(filteredUpdate).length === 0) {
+      return this.getCollection(id);
+    }
 
-    const updated: Collection = { ...collection, ...update };
-    this.collections.set(id, updated);
+    const [updated] = await db
+      .update(collections)
+      .set(filteredUpdate)
+      .where(eq(collections.id, id))
+      .returning();
     return updated;
   }
 
   async deleteCollection(id: string): Promise<boolean> {
-    const deleted = this.collections.delete(id);
-    if (deleted) {
-      const bookmarksArray = Array.from(this.bookmarks.entries());
-      for (const [bookmarkId, bookmark] of bookmarksArray) {
-        if (bookmark.collectionId === id) {
-          this.bookmarks.set(bookmarkId, { ...bookmark, collectionId: null });
-        }
-      }
-    }
-    return deleted;
+    await db
+      .update(bookmarks)
+      .set({ collectionId: null })
+      .where(eq(bookmarks.collectionId, id));
+
+    const deleted = await db.delete(collections).where(eq(collections.id, id)).returning();
+    return deleted.length > 0;
   }
 
   async getBookmarksByUserId(userId: string, collectionId?: string | null): Promise<Bookmark[]> {
-    return Array.from(this.bookmarks.values()).filter(
-      (bookmark) => 
-        bookmark.userId === userId && 
-        (collectionId === undefined || bookmark.collectionId === collectionId)
-    );
+    const conditions = [eq(bookmarks.userId, userId)];
+
+    if (collectionId !== undefined) {
+      if (collectionId === null) {
+        conditions.push(isNull(bookmarks.collectionId));
+      } else {
+        conditions.push(eq(bookmarks.collectionId, collectionId));
+      }
+    }
+
+    const whereClause = conditions.length === 1 ? conditions[0] : and(...conditions);
+    return db.query.bookmarks.findMany({ where: whereClause });
   }
 
   async getBookmark(id: string): Promise<Bookmark | undefined> {
-    return this.bookmarks.get(id);
+    return db.query.bookmarks.findFirst({ where: eq(bookmarks.id, id) });
   }
 
   async createBookmark(insertBookmark: InsertBookmark): Promise<Bookmark> {
-    const id = randomUUID();
-    const bookmark: Bookmark = {
-      userId: insertBookmark.userId,
-      collectionId: insertBookmark.collectionId ?? null,
-      url: insertBookmark.url,
-      title: insertBookmark.title,
-      domain: insertBookmark.domain,
-      favicon: insertBookmark.favicon ?? null,
-      memo: insertBookmark.memo ?? null,
-      id,
-      createdAt: new Date(),
-    };
-    this.bookmarks.set(id, bookmark);
+    const [bookmark] = await db
+      .insert(bookmarks)
+      .values({
+        ...insertBookmark,
+        collectionId: insertBookmark.collectionId ?? null,
+        favicon: insertBookmark.favicon ?? null,
+        memo: insertBookmark.memo ?? null,
+      })
+      .returning();
     return bookmark;
   }
 
@@ -165,17 +166,23 @@ export class MemStorage implements IStorage {
     id: string,
     update: Partial<InsertBookmark>,
   ): Promise<Bookmark | undefined> {
-    const bookmark = this.bookmarks.get(id);
-    if (!bookmark) return undefined;
+    const filteredUpdate = filterUndefined(update);
+    if (Object.keys(filteredUpdate).length === 0) {
+      return this.getBookmark(id);
+    }
 
-    const updated: Bookmark = { ...bookmark, ...update };
-    this.bookmarks.set(id, updated);
-    return updated;
+    const [bookmark] = await db
+      .update(bookmarks)
+      .set(filteredUpdate)
+      .where(eq(bookmarks.id, id))
+      .returning();
+    return bookmark;
   }
 
   async deleteBookmark(id: string): Promise<boolean> {
-    return this.bookmarks.delete(id);
+    const deleted = await db.delete(bookmarks).where(eq(bookmarks.id, id)).returning();
+    return deleted.length > 0;
   }
 }
 
-export const storage = new MemStorage();
+export const storage = new DbStorage();
