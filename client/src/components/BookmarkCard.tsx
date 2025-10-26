@@ -3,8 +3,7 @@ import { Edit2, Trash2, Save, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import FaviconInput from "@/components/FaviconInput";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -101,17 +100,11 @@ export default function BookmarkCard({ bookmark, onUpdateMemo, onUpdateFavicon, 
               
               {isEditing ? (
                 <div className="space-y-1.5 mt-1">
-                  <div className="space-y-1">
-                    <Label htmlFor={`favicon-${bookmark.id}`} className="text-xs">アイコンURL</Label>
-                    <Input
-                      id={`favicon-${bookmark.id}`}
-                      value={favicon}
-                      onChange={(e) => setFavicon(e.target.value)}
-                      placeholder="https://..."
-                      className="h-7 text-xs rounded-sm"
-                      data-testid={`input-favicon-${bookmark.id}`}
-                    />
-                  </div>
+                  <FaviconInput
+                    value={favicon}
+                    onChange={setFavicon}
+                    bookmarkId={bookmark.id}
+                  />
                   <Textarea
                     value={memo}
                     onChange={(e) => setMemo(e.target.value)}
