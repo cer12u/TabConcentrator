@@ -126,12 +126,21 @@ Preferred communication style: Simple, everyday language.
 - **Collections Feature**: Added tab-based collections for organizing bookmarks into multiple lists
   - Schema: Added `collections` table with userId reference
   - Backend: Implemented collection CRUD operations (GET, POST, PATCH, DELETE)
-  - Frontend: Tab-based UI with "すべて" (all) tab and individual collection tabs
+  - Frontend: Index-style tab UI with "すべて" (all) tab and individual collection tabs
   - Data integrity: When a collection is deleted, associated bookmarks have their `collectionId` set to null and remain in the "すべて" tab
-- **Editable Favicons**: Bookmark cards now include an input field to edit favicon URLs during editing
+- **Settings Dialog**: Centralized configuration interface
+  - Collection management: Add, edit, rename, and delete collections
+  - Default tab setting: Choose which tab to display on login (persisted in localStorage)
+  - Removed inline delete buttons from tabs for cleaner UI
+- **Favicon D&D Feature**: Enhanced favicon input with drag-and-drop support
+  - FaviconInput component accepts URL text drops, image file drops (converted to base64), and manual URL input
+  - Visual feedback during drag-over with upload button fallback
+- **Tab Design Improvements**: Index-style tabs with bottom border emphasis
+  - Active tab highlighted with primary-colored bottom border (2px)
+  - Clean, minimalist design without inline action buttons
 - **Error Message Display**: Login/registration forms now display error messages directly in the UI
 - **Security Fix**: PATCH /api/bookmarks/:id now only allows updating `memo` and `favicon` fields
-- **Testing**: Complete E2E test coverage for authentication, collections, bookmark CRUD, and favicon editing
+- **Testing**: Complete E2E test coverage for authentication, collections, bookmark CRUD, favicon editing, settings dialog, and default tab persistence
 
 ### External Dependencies
 
