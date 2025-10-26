@@ -52,7 +52,12 @@ export class MemStorage implements IStorage {
   async createBookmark(insertBookmark: InsertBookmark): Promise<Bookmark> {
     const id = randomUUID();
     const bookmark: Bookmark = {
-      ...insertBookmark,
+      userId: insertBookmark.userId,
+      url: insertBookmark.url,
+      title: insertBookmark.title,
+      domain: insertBookmark.domain,
+      favicon: insertBookmark.favicon ?? null,
+      memo: insertBookmark.memo ?? null,
       id,
       createdAt: new Date(),
     };
