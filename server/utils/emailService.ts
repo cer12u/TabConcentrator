@@ -16,7 +16,7 @@ export async function sendEmail({ to, subject, html }: SendEmailParams): Promise
     }
 
     const { error } = await resend.emails.send({
-      from: 'noreply@yourdomain.com',
+      from: 'onboarding@resend.dev',
       to,
       subject,
       html,

@@ -87,13 +87,13 @@ export default function Home() {
   });
 
   const registerMutation = useMutation({
-    mutationFn: async ({ username, password }: { username: string; password: string }) => {
+    mutationFn: async ({ username, email, password }: { username: string; email: string; password: string }) => {
       try {
-        const res = await apiRequest("POST", "/api/auth/register", { username, password });
+        const res = await apiRequest("POST", "/api/auth/register", { username, email, password });
         return res.json();
       } catch (error: any) {
         const errorText = await error.message || "登録に失敗しました";
-        throw new Error(errorText.includes("400") && errorText.includes("使用されています") ? "ユーザー名は既に使用されています" : errorText);
+        throw new Error(errorText.includes("400") && errorText.includes("使用されています") ? "ユーザー名またはメールアドレスは既に使用されています" : errorText);
       }
     },
     onSuccess: () => {
@@ -236,10 +236,10 @@ export default function Home() {
     });
   };
 
-  const handleRegister = async (username: string, password: string) => {
+  const handleRegister = async (username: string, email: string, password: string) => {
     return new Promise<void>((resolve, reject) => {
       registerMutation.mutate(
-        { username, password },
+        { username, email, password },
         {
           onSuccess: () => resolve(),
           onError: (error: any) => reject(error),
