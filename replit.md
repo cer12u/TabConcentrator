@@ -54,10 +54,11 @@ Preferred communication style: Simple, everyday language.
 
 **Authentication Flow**:
 - Username/password based registration and login
-- Password stored directly (Note: should implement hashing in production)
-- Session creation on successful authentication
+- Password hashing with bcrypt (SALT_ROUNDS = 10)
+- Session creation on successful authentication with httpOnly, secure cookies
 - `/api/auth/me` endpoint for session validation
 - `/api/auth/register`, `/api/auth/login`, `/api/auth/logout` endpoints
+- CSRF protection with session-based tokens (32-byte random values)
 
 **Storage Abstraction**:
 - IStorage interface defining data access methods
@@ -73,7 +74,7 @@ Preferred communication style: Simple, everyday language.
 **Users Table**:
 - `id`: UUID primary key (generated via `gen_random_uuid()`)
 - `username`: Unique text field
-- `password`: Text field for credentials
+- `password`: Hashed password (bcrypt with SALT_ROUNDS=10)
 
 **Collections Table**:
 - `id`: UUID primary key (generated via `gen_random_uuid()`)
@@ -112,11 +113,19 @@ Preferred communication style: Simple, everyday language.
 4. Client includes cookie in subsequent requests
 5. Protected endpoints verify session via `req.session.userId`
 
-**Security Considerations**:
-- HTTP-only cookies prevent XSS attacks
-- Secure flag enabled in production for HTTPS-only
-- Session secret configurable via environment variable
-- CORS and credential handling configured
+**Security Features**:
+- **Password Security**: bcrypt hashing with SALT_ROUNDS=10, no plaintext storage
+- **Session Management**: SESSION_SECRET required, 7-day expiry, httpOnly cookies
+- **CSRF Protection**: sameSite: "lax" cookies, session-based tokens, validation on POST/PUT/PATCH/DELETE
+- **SSRF Protection**: 
+  - Maximum image size: 5MB
+  - Protocol whitelist: http/https only
+  - Blocked hosts: localhost, 127.0.0.1, private IPs
+  - DNS resolution and IP validation (including IPv6-mapped IPv4)
+  - Redirect prevention (redirect: 'manual')
+  - Content-Type validation
+- **Error Handling**: Process crash prevention, minimal logging, no sensitive data in logs
+- **Cookie Security**: httpOnly, secure (in production), sameSite: "lax"
 
 **Authorization**: User-scoped data access - bookmarks and collections filtered by `userId` from session
 
@@ -146,8 +155,14 @@ Preferred communication style: Simple, everyday language.
   - Active tab highlighted with primary-colored bottom border (2px)
   - Clean, minimalist design without inline action buttons
 - **Error Message Display**: Login/registration forms now display error messages directly in the UI
-- **Security Fix**: PATCH /api/bookmarks/:id now only allows updating `memo` and `favicon` fields
-- **Testing**: Complete E2E test coverage for authentication, collections, bookmark CRUD, favicon editing, settings dialog, default tab persistence, and self-hosted image storage
+- **Security Hardening**: Comprehensive security improvements
+  - Password hashing: bcrypt with SALT_ROUNDS=10 for all passwords
+  - Session security: SESSION_SECRET environment variable now required
+  - CSRF protection: Session-based tokens, automatic validation, client-side retry logic
+  - SSRF defenses: DNS resolution, private IP blocking (IPv4/IPv6), redirect prevention, size limits (5MB)
+  - Error handling: Process crash prevention, minimal logging
+  - API security: PATCH /api/bookmarks/:id restricted to `memo` and `favicon` fields only
+- **Testing**: Complete E2E test coverage for authentication, collections, bookmark CRUD, favicon editing, settings dialog, default tab persistence, self-hosted image storage, and security features
 
 ### External Dependencies
 
