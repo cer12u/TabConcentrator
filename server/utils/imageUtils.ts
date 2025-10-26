@@ -4,7 +4,7 @@ export async function fetchImageAsBase64(url: string): Promise<string | null> {
       headers: {
         'User-Agent': 'Mozilla/5.0 (compatible; BookmarkManager/1.0)',
       },
-      signal: AbortSignal.timeout(5000),
+      signal: AbortSignal.timeout(10000),
     });
 
     if (!response.ok) {

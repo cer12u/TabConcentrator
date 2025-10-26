@@ -171,7 +171,7 @@ export default function Home() {
         url,
         title,
         domain,
-        favicon: `https://www.google.com/s2/favicons?domain=${domain}&sz=64`,
+        favicon: null,
         memo: "",
         collectionId: selectedCollectionId === "all" ? null : selectedCollectionId,
       });
