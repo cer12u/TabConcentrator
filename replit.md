@@ -2,7 +2,7 @@
 
 ## Overview
 
-A web-based bookmark management application that allows users to save, organize, and manage their bookmarks with metadata. The application features a clean, Linear-inspired interface with drag-and-drop URL support, automatic metadata extraction, and persistent storage. Users can add bookmarks via URL input, attach personal notes, and manage their collection through an intuitive card-based interface.
+A web-based bookmark management application that allows users to save, organize, and manage their bookmarks with metadata. The application features a clean, Linear-inspired interface with drag-and-drop URL support, automatic metadata extraction, tab-based collections for organizing bookmarks into multiple lists, editable favicon icons, and persistent storage. Users can add bookmarks via URL input, create custom collections (lists), attach personal notes with line break preservation, and manage their bookmarks through an intuitive card-based interface with tab navigation.
 
 ## User Preferences
 
@@ -63,7 +63,8 @@ Preferred communication style: Simple, everyday language.
 - IStorage interface defining data access methods
 - MemStorage class implementing in-memory storage
 - Designed to be replaceable with database implementation
-- Supports User and Bookmark entities with CRUD operations
+- Supports User, Collection, and Bookmark entities with CRUD operations
+- Collection deletion automatically nullifies associated bookmark collectionIds (preserves bookmarks in "すべて" tab)
 
 ### Data Storage Solutions
 
@@ -74,14 +75,21 @@ Preferred communication style: Simple, everyday language.
 - `username`: Unique text field
 - `password`: Text field for credentials
 
+**Collections Table**:
+- `id`: UUID primary key (generated via `gen_random_uuid()`)
+- `userId`: Foreign key to users (cascade delete)
+- `name`: Collection name (e.g., "仕事用", "趣味")
+- `createdAt`: Timestamp with default now()
+
 **Bookmarks Table**:
 - `id`: UUID primary key (generated via `gen_random_uuid()`)
 - `userId`: Foreign key to users (cascade delete)
+- `collectionId`: Optional foreign key to collections (nullable, cascade delete)
 - `url`: Bookmark URL
 - `title`: Page title
 - `domain`: Extracted domain name
-- `favicon`: Optional favicon URL
-- `memo`: User notes/description
+- `favicon`: Optional favicon URL (editable)
+- `memo`: User notes/description (preserves line breaks)
 - `createdAt`: Timestamp with default now()
 
 **ORM Configuration**:
@@ -110,7 +118,20 @@ Preferred communication style: Simple, everyday language.
 - Session secret configurable via environment variable
 - CORS and credential handling configured
 
-**Authorization**: User-scoped data access - bookmarks filtered by `userId` from session
+**Authorization**: User-scoped data access - bookmarks and collections filtered by `userId` from session
+
+## Recent Changes
+
+### October 26, 2025
+- **Collections Feature**: Added tab-based collections for organizing bookmarks into multiple lists
+  - Schema: Added `collections` table with userId reference
+  - Backend: Implemented collection CRUD operations (GET, POST, PATCH, DELETE)
+  - Frontend: Tab-based UI with "すべて" (all) tab and individual collection tabs
+  - Data integrity: When a collection is deleted, associated bookmarks have their `collectionId` set to null and remain in the "すべて" tab
+- **Editable Favicons**: Bookmark cards now include an input field to edit favicon URLs during editing
+- **Error Message Display**: Login/registration forms now display error messages directly in the UI
+- **Security Fix**: PATCH /api/bookmarks/:id now only allows updating `memo` and `favicon` fields
+- **Testing**: Complete E2E test coverage for authentication, collections, bookmark CRUD, and favicon editing
 
 ### External Dependencies
 
