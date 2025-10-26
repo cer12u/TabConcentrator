@@ -9,6 +9,7 @@ import { storage } from "./storage";
 import { insertUserSchema, insertBookmarkSchema, insertCollectionSchema } from "@shared/schema";
 import { fromZodError } from "zod-validation-error";
 import { fetchImageAsBase64, isBase64Image, isHttpUrl } from "./utils/imageUtils";
+import { sendEmail, generateVerificationEmail, generatePasswordResetEmail } from "./utils/emailService";
 
 const SALT_ROUNDS = 10;
 
@@ -111,6 +112,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       await storage.updateUser(user.id, { verificationToken });
 
+      const verificationLink = `${req.protocol}://${req.get('host')}/verify-email?token=${verificationToken}`;
+      const emailHtml = generateVerificationEmail(username, verificationLink);
+      
+      await sendEmail({
+        to: email,
+        subject: 'メールアドレスの確認',
+        html: emailHtml,
+      });
+
       await new Promise<void>((resolve, reject) => {
         req.session.regenerate((err) => {
           if (err) {
@@ -126,7 +136,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       res.json({ 
         id: user.id, 
-        username: user.username 
+        username: user.username,
+        email: user.email,
+        emailVerified: false,
+        message: '登録が完了しました。確認メールをお送りしましたので、メールアドレスを確認してください。'
       });
     } catch (error) {
       console.error("Register error:", error);
@@ -185,6 +198,102 @@ export async function registerRoutes(app: Express): Promise<Server> {
     });
   });
 
+  app.get("/api/auth/verify-email", async (req, res) => {
+    try {
+      const { token } = req.query;
+      
+      if (!token || typeof token !== 'string') {
+        return res.status(400).json({ error: "無効なトークンです" });
+      }
+
+      const user = await storage.getUserByVerificationToken(token);
+      if (!user) {
+        return res.status(404).json({ error: "無効または期限切れの確認リンクです" });
+      }
+
+      await storage.updateUser(user.id, {
+        emailVerified: new Date(),
+        verificationToken: null,
+      });
+
+      res.json({ 
+        message: "メールアドレスが確認されました",
+        username: user.username 
+      });
+    } catch (error) {
+      console.error("Email verification error:", error);
+      res.status(500).json({ error: "メール確認に失敗しました" });
+    }
+  });
+
+  app.post("/api/auth/request-password-reset", async (req, res) => {
+    try {
+      const { email } = req.body;
+      
+      if (!email) {
+        return res.status(400).json({ error: "メールアドレスを入力してください" });
+      }
+
+      const user = await storage.getUserByEmail(email);
+      if (!user) {
+        return res.json({ message: "リセットメールを送信しました（アカウントが存在する場合）" });
+      }
+
+      const resetToken = randomBytes(32).toString('hex');
+      const resetTokenExpiry = new Date(Date.now() + 60 * 60 * 1000);
+
+      await storage.updateUser(user.id, {
+        resetToken,
+        resetTokenExpiry,
+      });
+
+      const resetLink = `${req.protocol}://${req.get('host')}/reset-password?token=${resetToken}`;
+      const emailHtml = generatePasswordResetEmail(user.username, resetLink);
+      
+      await sendEmail({
+        to: user.email,
+        subject: 'パスワードのリセット',
+        html: emailHtml,
+      });
+
+      res.json({ message: "リセットメールを送信しました（アカウントが存在する場合）" });
+    } catch (error) {
+      console.error("Password reset request error:", error);
+      res.status(500).json({ error: "リセット要求に失敗しました" });
+    }
+  });
+
+  app.post("/api/auth/reset-password", async (req, res) => {
+    try {
+      const { token, newPassword } = req.body;
+      
+      if (!token || !newPassword) {
+        return res.status(400).json({ error: "トークンと新しいパスワードが必要です" });
+      }
+
+      if (newPassword.length < 6) {
+        return res.status(400).json({ error: "パスワードは6文字以上である必要があります" });
+      }
+
+      const user = await storage.getUserByResetToken(token);
+      if (!user) {
+        return res.status(404).json({ error: "無効または期限切れのリセットリンクです" });
+      }
+
+      const hashedPassword = await bcrypt.hash(newPassword, SALT_ROUNDS);
+      await storage.updateUser(user.id, {
+        password: hashedPassword,
+        resetToken: null,
+        resetTokenExpiry: null,
+      });
+
+      res.json({ message: "パスワードがリセットされました" });
+    } catch (error) {
+      console.error("Password reset error:", error);
+      res.status(500).json({ error: "パスワードのリセットに失敗しました" });
+    }
+  });
+
   app.get("/api/auth/me", async (req, res) => {
     if (!req.session.userId) {
       return res.status(401).json({ error: "ログインしていません" });
@@ -197,7 +306,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
     res.json({ 
       id: user.id, 
-      username: user.username 
+      username: user.username,
+      email: user.email,
+      emailVerified: user.emailVerified ? true : false
     });
   });
 
