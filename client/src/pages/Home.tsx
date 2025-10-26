@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
-import { queryClient, apiRequest, resetCSRFToken } from "@/lib/queryClient";
+import { queryClient, apiRequest, resetCSRFToken, ApiError } from "@/lib/queryClient";
 import { Settings } from "lucide-react";
 import Header from "@/components/Header";
 import BookmarkInput from "@/components/BookmarkInput";
@@ -74,9 +74,19 @@ export default function Home() {
       try {
         const res = await apiRequest("POST", "/api/auth/login", { username, password });
         return res.json();
-      } catch (error: any) {
-        const errorText = await error.message || "ログインに失敗しました";
-        throw new Error(errorText.includes("401") ? "ユーザー名またはパスワードが正しくありません" : errorText);
+      } catch (error: unknown) {
+        if (error instanceof ApiError) {
+          if (error.status === 401) {
+            throw new Error("ユーザー名またはパスワードが正しくありません");
+          }
+          throw new Error(error.message || "ログインに失敗しました");
+        }
+
+        if (error instanceof Error) {
+          throw new Error(error.message || "ログインに失敗しました");
+        }
+
+        throw new Error("ログインに失敗しました");
       }
     },
     onSuccess: () => {
@@ -91,9 +101,19 @@ export default function Home() {
       try {
         const res = await apiRequest("POST", "/api/auth/register", { username, email, password });
         return res.json();
-      } catch (error: any) {
-        const errorText = await error.message || "登録に失敗しました";
-        throw new Error(errorText.includes("400") && errorText.includes("使用されています") ? "ユーザー名またはメールアドレスは既に使用されています" : errorText);
+      } catch (error: unknown) {
+        if (error instanceof ApiError) {
+          if (error.status === 400 && /使用されています/.test(error.message)) {
+            throw new Error("ユーザー名またはメールアドレスは既に使用されています");
+          }
+          throw new Error(error.message || "登録に失敗しました");
+        }
+
+        if (error instanceof Error) {
+          throw new Error(error.message || "登録に失敗しました");
+        }
+
+        throw new Error("登録に失敗しました");
       }
     },
     onSuccess: () => {
@@ -124,11 +144,16 @@ export default function Home() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/collections"] });
     },
-    onError: (error: any) => {
+    onError: (error: unknown) => {
+      const message = error instanceof ApiError
+        ? error.message
+        : error instanceof Error
+          ? error.message
+          : undefined;
       toast({
         variant: "destructive",
         title: "エラー",
-        description: error.error || "コレクションの作成に失敗しました",
+        description: message || "コレクションの作成に失敗しました",
       });
     },
   });
@@ -141,11 +166,16 @@ export default function Home() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/collections"] });
     },
-    onError: (error: any) => {
+    onError: (error: unknown) => {
+      const message = error instanceof ApiError
+        ? error.message
+        : error instanceof Error
+          ? error.message
+          : undefined;
       toast({
         variant: "destructive",
         title: "エラー",
-        description: error.error || "コレクションの更新に失敗しました",
+        description: message || "コレクションの更新に失敗しました",
       });
     },
   });
@@ -181,11 +211,16 @@ export default function Home() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/bookmarks"] });
     },
-    onError: (error: any) => {
+    onError: (error: unknown) => {
+      const message = error instanceof ApiError
+        ? error.message
+        : error instanceof Error
+          ? error.message
+          : undefined;
       toast({
         variant: "destructive",
         title: "エラー",
-        description: error.error || "ブックマークの追加に失敗しました",
+        description: message || "ブックマークの追加に失敗しました",
       });
     },
   });
@@ -198,11 +233,16 @@ export default function Home() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/bookmarks"] });
     },
-    onError: (error: any) => {
+    onError: (error: unknown) => {
+      const message = error instanceof ApiError
+        ? error.message
+        : error instanceof Error
+          ? error.message
+          : undefined;
       toast({
         variant: "destructive",
         title: "エラー",
-        description: error.error || "ブックマークの更新に失敗しました",
+        description: message || "ブックマークの更新に失敗しました",
       });
     },
   });
@@ -215,11 +255,16 @@ export default function Home() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/bookmarks"] });
     },
-    onError: (error: any) => {
+    onError: (error: unknown) => {
+      const message = error instanceof ApiError
+        ? error.message
+        : error instanceof Error
+          ? error.message
+          : undefined;
       toast({
         variant: "destructive",
         title: "エラー",
-        description: error.error || "ブックマークの削除に失敗しました",
+        description: message || "ブックマークの削除に失敗しました",
       });
     },
   });

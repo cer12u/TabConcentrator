@@ -1,5 +1,17 @@
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
 
+export class ApiError extends Error {
+  status: number;
+  payload?: unknown;
+
+  constructor(status: number, message: string, payload?: unknown) {
+    super(message);
+    this.status = status;
+    this.payload = payload;
+    Object.setPrototypeOf(this, ApiError.prototype);
+  }
+}
+
 let csrfToken: string | null = null;
 
 async function fetchCSRFToken(forceRefresh = false): Promise<string> {
@@ -25,8 +37,29 @@ export function resetCSRFToken() {
 
 async function throwIfResNotOk(res: Response) {
   if (!res.ok) {
-    const text = (await res.text()) || res.statusText;
-    throw new Error(`${res.status}: ${text}`);
+    const text = await res.text();
+    let parsed: unknown = undefined;
+    let message = text || res.statusText;
+
+    if (text) {
+      try {
+        parsed = JSON.parse(text);
+        if (parsed && typeof parsed === "object") {
+          const maybeMessage = (parsed as Record<string, unknown>).error ??
+            (parsed as Record<string, unknown>).message;
+          if (typeof maybeMessage === "string" && maybeMessage.trim().length > 0) {
+            message = maybeMessage;
+          } else {
+            message = text;
+          }
+        }
+      } catch {
+        // ignore JSON parse errors, fall back to raw text
+      }
+    }
+
+    const payload = parsed !== undefined ? parsed : (text || undefined);
+    throw new ApiError(res.status, message || res.statusText, payload);
   }
 }
 

@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { apiRequest } from "@/lib/queryClient";
+import { apiRequest, ApiError } from "@/lib/queryClient";
 import { PASSWORD_MIN_LENGTH } from "@shared/constants";
 
 export default function ResetPassword() {
@@ -51,8 +51,13 @@ export default function ResetPassword() {
       const res = await apiRequest("POST", "/api/auth/reset-password", { token, newPassword });
       await res.json();
       setIsSuccess(true);
-    } catch (error: any) {
-      setErrorMessage(error.message || "パスワードのリセットに失敗しました");
+    } catch (error: unknown) {
+      const message = error instanceof ApiError
+        ? error.message
+        : error instanceof Error
+          ? error.message
+          : "パスワードのリセットに失敗しました";
+      setErrorMessage(message || "パスワードのリセットに失敗しました");
     } finally {
       setIsLoading(false);
     }

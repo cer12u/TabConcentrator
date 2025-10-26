@@ -4,8 +4,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { apiRequest } from "@/lib/queryClient";
-import { PASSWORD_MIN_LENGTH, USERNAME_MIN_LENGTH } from "@shared/constants";
+import { apiRequest, ApiError } from "@/lib/queryClient";
+import { PASSWORD_MIN_LENGTH, USERNAME_MIN_LENGTH, USERNAME_MAX_LENGTH } from "@shared/constants";
 
 interface LoginPageProps {
   onLogin: (username: string, password: string) => Promise<void>;
@@ -28,6 +28,7 @@ export default function LoginPage({ onLogin, onRegister }: LoginPageProps) {
 
   const isRegisterFormInvalid = isRegisterMode && (
     trimmedUsername.length < USERNAME_MIN_LENGTH ||
+    trimmedUsername.length > USERNAME_MAX_LENGTH ||
     !trimmedEmail ||
     password.length < PASSWORD_MIN_LENGTH ||
     password !== passwordConfirm
@@ -60,6 +61,11 @@ export default function LoginPage({ onLogin, onRegister }: LoginPageProps) {
 
     if (trimmedUsername.length < USERNAME_MIN_LENGTH) {
       setErrorMessage(`ユーザー名は${USERNAME_MIN_LENGTH}文字以上で入力してください`);
+      return;
+    }
+
+    if (trimmedUsername.length > USERNAME_MAX_LENGTH) {
+      setErrorMessage(`ユーザー名は${USERNAME_MAX_LENGTH}文字以下で入力してください`);
       return;
     }
 
@@ -107,8 +113,13 @@ export default function LoginPage({ onLogin, onRegister }: LoginPageProps) {
       const data = await res.json();
       setSuccessMessage(data.message || "リセットメールを送信しました（アカウントが存在する場合）");
       setEmail(trimmedEmail);
-    } catch (error: any) {
-      setErrorMessage(error.message || "リセットメールの送信に失敗しました");
+    } catch (error: unknown) {
+      const message = error instanceof ApiError
+        ? error.message
+        : error instanceof Error
+          ? error.message
+          : "リセットメールの送信に失敗しました";
+      setErrorMessage(message || "リセットメールの送信に失敗しました");
     } finally {
       setIsLoading(false);
     }
@@ -215,6 +226,7 @@ export default function LoginPage({ onLogin, onRegister }: LoginPageProps) {
                   required
                   minLength={isRegisterMode ? USERNAME_MIN_LENGTH : undefined}
                   data-testid={isRegisterMode ? "input-register-username" : "input-login-username"}
+                  maxLength={USERNAME_MAX_LENGTH}
                 />
                 {isRegisterMode &&
                   trimmedUsername.length > 0 &&
@@ -223,6 +235,11 @@ export default function LoginPage({ onLogin, onRegister }: LoginPageProps) {
                       {`ユーザー名は${USERNAME_MIN_LENGTH}文字以上で入力してください`}
                     </p>
                   )}
+                {isRegisterMode && trimmedUsername.length > USERNAME_MAX_LENGTH && (
+                  <p className="text-xs text-destructive">
+                    {`ユーザー名は${USERNAME_MAX_LENGTH}文字以下で入力してください`}
+                  </p>
+                )}
               </div>
               {isRegisterMode && (
                 <div className="space-y-2">
