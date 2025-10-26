@@ -122,7 +122,8 @@ export class MemStorage implements IStorage {
   async deleteCollection(id: string): Promise<boolean> {
     const deleted = this.collections.delete(id);
     if (deleted) {
-      for (const [bookmarkId, bookmark] of this.bookmarks.entries()) {
+      const bookmarksArray = Array.from(this.bookmarks.entries());
+      for (const [bookmarkId, bookmark] of bookmarksArray) {
         if (bookmark.collectionId === id) {
           this.bookmarks.set(bookmarkId, { ...bookmark, collectionId: null });
         }
