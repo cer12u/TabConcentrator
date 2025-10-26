@@ -6,6 +6,7 @@ import { z } from "zod";
 import { storage } from "./storage";
 import { insertUserSchema, insertBookmarkSchema, insertCollectionSchema } from "@shared/schema";
 import { fromZodError } from "zod-validation-error";
+import { fetchImageAsBase64, isBase64Image, isHttpUrl } from "./utils/imageUtils";
 
 const MemoryStore = createMemoryStore(session);
 
@@ -220,7 +221,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: fromZodError(result.error).message });
       }
 
-      const bookmark = await storage.createBookmark(result.data);
+      let faviconData = result.data.favicon || null;
+      
+      if (faviconData && isHttpUrl(faviconData) && !isBase64Image(faviconData)) {
+        const base64Image = await fetchImageAsBase64(faviconData);
+        if (!base64Image) {
+          return res.status(400).json({ 
+            error: "画像のダウンロードに失敗しました。別の画像を選択してください。" 
+          });
+        }
+        faviconData = base64Image;
+      }
+
+      const bookmark = await storage.createBookmark({
+        ...result.data,
+        favicon: faviconData,
+      });
       res.json(bookmark);
     } catch (error) {
       console.error("Create bookmark error:", error);
@@ -252,7 +268,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: fromZodError(result.error).message });
       }
 
-      const bookmark = await storage.updateBookmark(id, result.data);
+      let updateData = { ...result.data };
+      
+      if (updateData.favicon && isHttpUrl(updateData.favicon) && !isBase64Image(updateData.favicon)) {
+        const base64Image = await fetchImageAsBase64(updateData.favicon);
+        if (!base64Image) {
+          return res.status(400).json({ 
+            error: "画像のダウンロードに失敗しました。別の画像を選択してください。" 
+          });
+        }
+        updateData.favicon = base64Image;
+      }
+
+      const bookmark = await storage.updateBookmark(id, updateData);
       res.json(bookmark);
     } catch (error) {
       console.error("Update bookmark error:", error);
