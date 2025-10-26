@@ -98,7 +98,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const hashedPassword = await bcrypt.hash(password, SALT_ROUNDS);
       const user = await storage.createUser({ username, password: hashedPassword });
 
+      await new Promise<void>((resolve, reject) => {
+        req.session.regenerate((err) => {
+          if (err) {
+            reject(err);
+          } else {
+            resolve();
+          }
+        });
+      });
+
       req.session.userId = user.id;
+      req.session.csrfToken = randomBytes(32).toString('hex');
       
       res.json({ 
         id: user.id, 
@@ -129,8 +140,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(401).json({ error: "ユーザー名またはパスワードが正しくありません" });
       }
 
-      req.session.userId = user.id;
+      await new Promise<void>((resolve, reject) => {
+        req.session.regenerate((err) => {
+          if (err) {
+            reject(err);
+          } else {
+            resolve();
+          }
+        });
+      });
 
+      req.session.userId = user.id;
+      req.session.csrfToken = randomBytes(32).toString('hex');
+      
       res.json({ 
         id: user.id, 
         username: user.username 
@@ -273,6 +295,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       if (!result.success) {
         return res.status(400).json({ error: fromZodError(result.error).message });
+      }
+
+      if (result.data.collectionId !== null && result.data.collectionId !== undefined) {
+        const collection = await storage.getCollection(result.data.collectionId);
+        if (!collection) {
+          return res.status(404).json({ error: "指定されたコレクションが見つかりません" });
+        }
+        if (collection.userId !== userId) {
+          return res.status(403).json({ error: "このコレクションにブックマークを追加する権限がありません" });
+        }
       }
 
       let faviconData = result.data.favicon || null;
