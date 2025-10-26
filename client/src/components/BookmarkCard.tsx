@@ -3,6 +3,8 @@ import { Edit2, Trash2, Save, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -19,6 +21,7 @@ import type { Bookmark } from "@shared/schema";
 interface BookmarkCardProps {
   bookmark: Bookmark;
   onUpdateMemo: (id: string, memo: string) => void;
+  onUpdateFavicon: (id: string, favicon: string) => void;
   onDelete: (id: string) => void;
 }
 
@@ -31,18 +34,23 @@ function getDomain(url: string): string {
   }
 }
 
-export default function BookmarkCard({ bookmark, onUpdateMemo, onDelete }: BookmarkCardProps) {
+export default function BookmarkCard({ bookmark, onUpdateMemo, onUpdateFavicon, onDelete }: BookmarkCardProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [memo, setMemo] = useState(bookmark.memo || '');
+  const [favicon, setFavicon] = useState(bookmark.favicon || '');
 
   const handleSave = () => {
     console.log("Saving memo for bookmark:", bookmark.id);
     onUpdateMemo(bookmark.id, memo);
+    if (favicon !== (bookmark.favicon || '')) {
+      onUpdateFavicon(bookmark.id, favicon);
+    }
     setIsEditing(false);
   };
 
   const handleCancel = () => {
     setMemo(bookmark.memo || '');
+    setFavicon(bookmark.favicon || '');
     setIsEditing(false);
   };
 
@@ -93,12 +101,22 @@ export default function BookmarkCard({ bookmark, onUpdateMemo, onDelete }: Bookm
               
               {isEditing ? (
                 <div className="space-y-1.5 mt-1">
+                  <div className="space-y-1">
+                    <Label htmlFor={`favicon-${bookmark.id}`} className="text-xs">アイコンURL</Label>
+                    <Input
+                      id={`favicon-${bookmark.id}`}
+                      value={favicon}
+                      onChange={(e) => setFavicon(e.target.value)}
+                      placeholder="https://..."
+                      className="h-7 text-xs rounded-sm"
+                      data-testid={`input-favicon-${bookmark.id}`}
+                    />
+                  </div>
                   <Textarea
                     value={memo}
                     onChange={(e) => setMemo(e.target.value)}
                     placeholder="メモを追加..."
                     className="h-[3.375rem] resize-none text-xs rounded-sm leading-[1.125rem]"
-                    autoFocus
                     data-testid={`textarea-notes-${bookmark.id}`}
                   />
                   <div className="flex gap-1.5">

@@ -1,4 +1,4 @@
-import { type User, type InsertUser, type Bookmark, type InsertBookmark } from "@shared/schema";
+import { type User, type InsertUser, type Bookmark, type InsertBookmark, type Collection, type InsertCollection } from "@shared/schema";
 import { randomUUID } from "crypto";
 
 export interface IStorage {
@@ -6,7 +6,13 @@ export interface IStorage {
   getUserByUsername(username: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
   
-  getBookmarksByUserId(userId: string): Promise<Bookmark[]>;
+  getCollectionsByUserId(userId: string): Promise<Collection[]>;
+  getCollection(id: string): Promise<Collection | undefined>;
+  createCollection(collection: InsertCollection): Promise<Collection>;
+  updateCollection(id: string, collection: Partial<InsertCollection>): Promise<Collection | undefined>;
+  deleteCollection(id: string): Promise<boolean>;
+  
+  getBookmarksByUserId(userId: string, collectionId?: string | null): Promise<Bookmark[]>;
   getBookmark(id: string): Promise<Bookmark | undefined>;
   createBookmark(bookmark: InsertBookmark): Promise<Bookmark>;
   updateBookmark(id: string, bookmark: Partial<InsertBookmark>): Promise<Bookmark | undefined>;
@@ -15,10 +21,12 @@ export interface IStorage {
 
 export class MemStorage implements IStorage {
   private users: Map<string, User>;
+  private collections: Map<string, Collection>;
   private bookmarks: Map<string, Bookmark>;
 
   constructor() {
     this.users = new Map();
+    this.collections = new Map();
     this.bookmarks = new Map();
   }
 
@@ -39,9 +47,57 @@ export class MemStorage implements IStorage {
     return user;
   }
 
-  async getBookmarksByUserId(userId: string): Promise<Bookmark[]> {
+  async getCollectionsByUserId(userId: string): Promise<Collection[]> {
+    return Array.from(this.collections.values()).filter(
+      (collection) => collection.userId === userId,
+    );
+  }
+
+  async getCollection(id: string): Promise<Collection | undefined> {
+    return this.collections.get(id);
+  }
+
+  async createCollection(insertCollection: InsertCollection): Promise<Collection> {
+    const id = randomUUID();
+    const collection: Collection = {
+      userId: insertCollection.userId,
+      name: insertCollection.name,
+      id,
+      createdAt: new Date(),
+    };
+    this.collections.set(id, collection);
+    return collection;
+  }
+
+  async updateCollection(
+    id: string,
+    update: Partial<InsertCollection>,
+  ): Promise<Collection | undefined> {
+    const collection = this.collections.get(id);
+    if (!collection) return undefined;
+
+    const updated: Collection = { ...collection, ...update };
+    this.collections.set(id, updated);
+    return updated;
+  }
+
+  async deleteCollection(id: string): Promise<boolean> {
+    const deleted = this.collections.delete(id);
+    if (deleted) {
+      for (const [bookmarkId, bookmark] of this.bookmarks.entries()) {
+        if (bookmark.collectionId === id) {
+          this.bookmarks.set(bookmarkId, { ...bookmark, collectionId: null });
+        }
+      }
+    }
+    return deleted;
+  }
+
+  async getBookmarksByUserId(userId: string, collectionId?: string | null): Promise<Bookmark[]> {
     return Array.from(this.bookmarks.values()).filter(
-      (bookmark) => bookmark.userId === userId,
+      (bookmark) => 
+        bookmark.userId === userId && 
+        (collectionId === undefined || bookmark.collectionId === collectionId)
     );
   }
 
@@ -53,6 +109,7 @@ export class MemStorage implements IStorage {
     const id = randomUUID();
     const bookmark: Bookmark = {
       userId: insertBookmark.userId,
+      collectionId: insertBookmark.collectionId ?? null,
       url: insertBookmark.url,
       title: insertBookmark.title,
       domain: insertBookmark.domain,

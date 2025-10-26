@@ -6,8 +6,8 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 
 interface LoginPageProps {
-  onLogin: (username: string, password: string) => void;
-  onRegister: (username: string, password: string) => void;
+  onLogin: (username: string, password: string) => Promise<void>;
+  onRegister: (username: string, password: string) => Promise<void>;
 }
 
 export default function LoginPage({ onLogin, onRegister }: LoginPageProps) {
@@ -16,24 +16,35 @@ export default function LoginPage({ onLogin, onRegister }: LoginPageProps) {
   const [password, setPassword] = useState("");
   const [passwordConfirm, setPasswordConfirm] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("");
 
-  const handleLoginSubmit = (e: React.FormEvent) => {
+  const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (username && password) {
       setIsLoading(true);
-      console.log("Login attempt:", username);
-      onLogin(username, password);
-      setTimeout(() => setIsLoading(false), 1000);
+      setErrorMessage("");
+      try {
+        await onLogin(username, password);
+      } catch (error: any) {
+        setErrorMessage(error.message || "ログインに失敗しました");
+      } finally {
+        setIsLoading(false);
+      }
     }
   };
 
-  const handleRegisterSubmit = (e: React.FormEvent) => {
+  const handleRegisterSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (username && password && password === passwordConfirm) {
       setIsLoading(true);
-      console.log("Register attempt:", username);
-      onRegister(username, password);
-      setTimeout(() => setIsLoading(false), 1000);
+      setErrorMessage("");
+      try {
+        await onRegister(username, password);
+      } catch (error: any) {
+        setErrorMessage(error.message || "登録に失敗しました");
+      } finally {
+        setIsLoading(false);
+      }
     }
   };
 
@@ -42,6 +53,7 @@ export default function LoginPage({ onLogin, onRegister }: LoginPageProps) {
     setUsername("");
     setPassword("");
     setPasswordConfirm("");
+    setErrorMessage("");
   };
 
   return (
@@ -61,6 +73,11 @@ export default function LoginPage({ onLogin, onRegister }: LoginPageProps) {
           </div>
         </CardHeader>
         <CardContent>
+          {errorMessage && (
+            <div className="mb-4 p-3 bg-destructive/10 border border-destructive/30 rounded-sm">
+              <p className="text-sm text-destructive" data-testid="text-error-message">{errorMessage}</p>
+            </div>
+          )}
           <form onSubmit={isRegisterMode ? handleRegisterSubmit : handleLoginSubmit} className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="username">ユーザー名</Label>
@@ -126,7 +143,7 @@ export default function LoginPage({ onLogin, onRegister }: LoginPageProps) {
         </CardContent>
         <CardFooter className="flex justify-center">
           <Button
-            variant="link"
+            variant="ghost"
             onClick={toggleMode}
             className="text-sm"
             data-testid="button-toggle-mode"

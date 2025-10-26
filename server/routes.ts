@@ -4,7 +4,7 @@ import session from "express-session";
 import createMemoryStore from "memorystore";
 import { z } from "zod";
 import { storage } from "./storage";
-import { insertUserSchema, insertBookmarkSchema } from "@shared/schema";
+import { insertUserSchema, insertBookmarkSchema, insertCollectionSchema } from "@shared/schema";
 import { fromZodError } from "zod-validation-error";
 
 const MemoryStore = createMemoryStore(session);
@@ -118,10 +118,92 @@ export async function registerRoutes(app: Express): Promise<Server> {
     next();
   };
 
+  app.get("/api/collections", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      const collections = await storage.getCollectionsByUserId(userId);
+      res.json(collections);
+    } catch (error) {
+      console.error("Get collections error:", error);
+      res.status(500).json({ error: "コレクションの取得に失敗しました" });
+    }
+  });
+
+  app.post("/api/collections", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      const result = insertCollectionSchema.safeParse({ ...req.body, userId });
+      
+      if (!result.success) {
+        return res.status(400).json({ error: fromZodError(result.error).message });
+      }
+
+      const collection = await storage.createCollection(result.data);
+      res.json(collection);
+    } catch (error) {
+      console.error("Create collection error:", error);
+      res.status(500).json({ error: "コレクションの作成に失敗しました" });
+    }
+  });
+
+  app.patch("/api/collections/:id", requireAuth, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const userId = req.session.userId!;
+
+      const existingCollection = await storage.getCollection(id);
+      if (!existingCollection) {
+        return res.status(404).json({ error: "コレクションが見つかりません" });
+      }
+
+      if (existingCollection.userId !== userId) {
+        return res.status(403).json({ error: "このコレクションを編集する権限がありません" });
+      }
+
+      const updateSchema = z.object({
+        name: z.string().optional(),
+      });
+
+      const result = updateSchema.safeParse(req.body);
+      if (!result.success) {
+        return res.status(400).json({ error: fromZodError(result.error).message });
+      }
+
+      const collection = await storage.updateCollection(id, result.data);
+      res.json(collection);
+    } catch (error) {
+      console.error("Update collection error:", error);
+      res.status(500).json({ error: "コレクションの更新に失敗しました" });
+    }
+  });
+
+  app.delete("/api/collections/:id", requireAuth, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const userId = req.session.userId!;
+
+      const existingCollection = await storage.getCollection(id);
+      if (!existingCollection) {
+        return res.status(404).json({ error: "コレクションが見つかりません" });
+      }
+
+      if (existingCollection.userId !== userId) {
+        return res.status(403).json({ error: "このコレクションを削除する権限がありません" });
+      }
+
+      await storage.deleteCollection(id);
+      res.json({ message: "コレクションを削除しました" });
+    } catch (error) {
+      console.error("Delete collection error:", error);
+      res.status(500).json({ error: "コレクションの削除に失敗しました" });
+    }
+  });
+
   app.get("/api/bookmarks", requireAuth, async (req, res) => {
     try {
       const userId = req.session.userId!;
-      const bookmarks = await storage.getBookmarksByUserId(userId);
+      const collectionId = req.query.collectionId as string | undefined;
+      const bookmarks = await storage.getBookmarksByUserId(userId, collectionId === "null" ? null : collectionId);
       res.json(bookmarks);
     } catch (error) {
       console.error("Get bookmarks error:", error);
@@ -162,6 +244,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const updateSchema = z.object({
         memo: z.string().optional(),
+        favicon: z.string().optional(),
       });
 
       const result = updateSchema.safeParse(req.body);
