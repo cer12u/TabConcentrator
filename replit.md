@@ -2,7 +2,7 @@
 
 ## Overview
 
-A web-based bookmark management application that allows users to save, organize, and manage their bookmarks with metadata. The application features a clean, Linear-inspired interface with drag-and-drop URL support, automatic metadata extraction, tab-based collections for organizing bookmarks into multiple lists, editable favicon icons, and persistent storage. Users can add bookmarks via URL input, create custom collections (lists), attach personal notes with line break preservation, and manage their bookmarks through an intuitive card-based interface with tab navigation.
+A web-based bookmark management application designed for saving, organizing, and managing bookmarks with rich metadata. It offers a Linear-inspired interface, drag-and-drop URL support, automatic metadata extraction, and tab-based collections for organization. Key features include editable favicons, persistent storage, custom notes with line break preservation, and an intuitive card-based interface. The project aims to provide a clean, efficient tool for personal bookmark management with a focus on user experience and data integrity.
 
 ## User Preferences
 
@@ -10,224 +10,68 @@ Preferred communication style: Simple, everyday language.
 
 ## System Architecture
 
-### Frontend Architecture
+### Frontend
 
-**Framework**: React 18 with TypeScript and Vite as the build tool
+**Framework**: React 18 with TypeScript and Vite.
+**UI/UX**: Linear-inspired interface with Material Design influences. Utilizes Radix UI for accessible components, shadcn/ui for design, and Tailwind CSS for styling. Custom color system with CSS variables, Inter font family, and consistent spacing.
+**State Management**: TanStack Query for server state and caching; local component state for UI.
+**Routing**: Wouter for client-side routing, handling home, email verification, and password reset routes.
 
-**UI Component System**: 
-- Radix UI primitives for accessible, unstyled components
-- shadcn/ui design system configured with "new-york" style
-- Tailwind CSS for utility-first styling with custom design tokens
-- Component aliases configured for clean imports (`@/components`, `@/lib`, `@/hooks`)
+### Backend
 
-**State Management**:
-- TanStack Query (React Query) for server state management and caching
-- Session-based authentication state with API queries
-- Local component state for UI interactions
+**Runtime**: Node.js with Express.js.
+**API Design**: RESTful API under `/api` with session-based authentication.
+**Session Management**: `express-session` with in-memory store, 7-day expiry, and secure cookie configuration.
+**Authentication**: Username/email/password registration and login, bcrypt for password hashing, email verification, and password reset flows. CSRF protection is implemented.
+**Storage Abstraction**: An `IStorage` interface with a `MemStorage` in-memory implementation, designed to be replaceable with a database. Supports User, Collection, and Bookmark entities with CRUD operations.
 
-**Routing**: 
-- Wouter for lightweight client-side routing
-- Single-page application with `/` (Home) route
+### Data Storage
 
-**Design System**:
-- Linear-inspired productivity interface with Material Design influences
-- Custom color system using HSL values with CSS variables for theming
-- Typography using Inter font family (Google Fonts) with SF Mono for code/URLs
-- Consistent spacing primitives (Tailwind units: 2, 4, 6, 8, 12, 16)
-- Card-based layout with subtle shadows and borders
+**Database**: PostgreSQL via Drizzle ORM (configured with Neon serverless driver).
+**Schema**:
+- **Users**: `id`, `username`, `email`, `password` (hashed), `emailVerified`, `verificationToken`, `resetToken`, `resetTokenExpiry`.
+- **Collections**: `id`, `userId`, `name`, `createdAt`.
+- **Bookmarks**: `id`, `userId`, `collectionId` (nullable), `url`, `title`, `domain`, `favicon`, `memo`, `createdAt`.
+**ORM Configuration**: Drizzle Kit for migrations, Zod for validation, shared schema between client/server. In-memory storage is used for development, with a planned transition to Drizzle for production.
 
-### Backend Architecture
+### Security
 
-**Runtime**: Node.js with Express.js framework
+**Authentication**: Session-based with `httpOnly`, `secure`, `sameSite: "lax"` cookies.
+**Features**:
+- Password hashing with bcrypt (SALT_ROUNDS=10).
+- Session regeneration on login/register to prevent session fixation.
+- CSRF protection via session-based tokens.
+- SSRF defenses for image fetching: size limits (5MB), protocol/host whitelisting, private IP blocking, redirect prevention, content-type validation.
+- User-scoped data access for bookmarks and collections.
+- Collection ownership validation during bookmark creation.
+- Robust error handling to prevent crashes and avoid logging sensitive data.
 
-**API Design**:
-- RESTful API endpoints under `/api` prefix
-- Session-based authentication (no token-based auth)
-- Express middleware for request logging and JSON parsing
-- Raw body capture for webhook/external integrations
-
-**Session Management**:
-- express-session with in-memory store (MemoryStore from memorystore package)
-- Session cookie configuration with secure flags for production
-- 7-day session expiry
-- Session data stores userId for authenticated requests
-
-**Authentication Flow**:
-- Username/password based registration and login
-- Password hashing with bcrypt (SALT_ROUNDS = 10)
-- Session creation on successful authentication with httpOnly, secure cookies
-- `/api/auth/me` endpoint for session validation
-- `/api/auth/register`, `/api/auth/login`, `/api/auth/logout` endpoints
-- CSRF protection with session-based tokens (32-byte random values)
-
-**Storage Abstraction**:
-- IStorage interface defining data access methods
-- MemStorage class implementing in-memory storage
-- Designed to be replaceable with database implementation
-- Supports User, Collection, and Bookmark entities with CRUD operations
-- Collection deletion automatically nullifies associated bookmark collectionIds (preserves bookmarks in "すべて" tab)
-
-### Data Storage Solutions
-
-**Database Schema** (Drizzle ORM with PostgreSQL):
-
-**Users Table**:
-- `id`: UUID primary key (generated via `gen_random_uuid()`)
-- `username`: Unique text field
-- `password`: Hashed password (bcrypt with SALT_ROUNDS=10)
-
-**Collections Table**:
-- `id`: UUID primary key (generated via `gen_random_uuid()`)
-- `userId`: Foreign key to users (cascade delete)
-- `name`: Collection name (e.g., "仕事用", "趣味")
-- `createdAt`: Timestamp with default now()
-
-**Bookmarks Table**:
-- `id`: UUID primary key (generated via `gen_random_uuid()`)
-- `userId`: Foreign key to users (cascade delete)
-- `collectionId`: Optional foreign key to collections (nullable, cascade delete)
-- `url`: Bookmark URL
-- `title`: Page title
-- `domain`: Extracted domain name
-- `favicon`: Optional favicon URL (editable)
-- `memo`: User notes/description (preserves line breaks)
-- `createdAt`: Timestamp with default now()
-
-**ORM Configuration**:
-- Drizzle Kit for schema migrations
-- Schema located at `shared/schema.ts` for sharing between client/server
-- Zod validation schemas generated from Drizzle schemas
-- Neon serverless driver for PostgreSQL connections
-- WebSocket support configured for serverless database access
-
-**Current Implementation**: In-memory storage (MemStorage) used for development/testing, designed to be replaced with Drizzle database implementation.
-
-### Authentication and Authorization
-
-**Strategy**: Session-based authentication with cookie storage
-
-**Flow**:
-1. User registers with username/password via `/api/auth/register`
-2. User logs in with credentials via `/api/auth/login`
-3. Server creates session and returns session cookie
-4. Client includes cookie in subsequent requests
-5. Protected endpoints verify session via `req.session.userId`
-
-**Security Features**:
-- **Password Security**: bcrypt hashing with SALT_ROUNDS=10, no plaintext storage
-- **Session Management**: SESSION_SECRET required, 7-day expiry, httpOnly cookies, session regeneration on login/register
-- **Session Fixation Protection**: `req.session.regenerate()` called on successful authentication to prevent session fixation attacks
-- **CSRF Protection**: sameSite: "lax" cookies, session-based tokens with unconditional regeneration, validation on POST/PUT/PATCH/DELETE
-- **SSRF Protection**: 
-  - Maximum image size: 5MB
-  - Protocol whitelist: http/https only
-  - Blocked hosts: localhost, 127.0.0.1, private IPs
-  - DNS resolution and IP validation (including IPv6-mapped IPv4)
-  - Redirect prevention (redirect: 'manual')
-  - Content-Type validation
-- **Error Handling**: Process crash prevention, minimal logging, no sensitive data in logs
-- **Cookie Security**: httpOnly, secure (in production), sameSite: "lax"
-
-**Authorization**: 
-- User-scoped data access - bookmarks and collections filtered by `userId` from session
-- **Collection Ownership Validation**: Bookmark creation validates that collectionId belongs to authenticated user (prevents unauthorized cross-user collection access)
-
-## Recent Changes
-
-### October 26, 2025 (Critical Security Fixes)
-- **[高] セッション固定攻撃の脆弱性を修正**
-  - ログイン/登録時に `req.session.regenerate()` でセッションIDを再生成
-  - 攻撃者が事前に発行したセッションIDを被害者に植え付ける攻撃を防止
-  - セッション再生成をPromiseでラップし、制御フローを適切に管理
-  - CSRFトークンも認証イベントごとに無条件で再生成
-  - 場所: server/routes.ts (登録API、ログインAPI)
-- **[中] collectionId所有者検証の追加**
-  - ブックマーク作成時にcollectionIdの存在と所有者を検証
-  - 他ユーザーのコレクションIDを指定できてしまう脆弱性を修正
-  - null/undefined の明示的なチェックを追加
-  - 場所: server/routes.ts:301-311 (ブックマーク作成API)
-- **テスト結果**: 全E2Eテストが成功、セキュリティ修正後も全機能が正常動作
-
-### October 26, 2025 (Package Updates)
-- **Package Modernization**: Updated dependencies to latest compatible versions
-  - TypeScript: 5.6.3 → 5.9.3 (latest stable with 12-month security support)
-  - Vite: 5.4.20 → 5.4.21 (latest v5 patch)
-  - React Hook Form: 7.55.0 → 7.65.0
-  - Wouter: 3.3.5 → 3.7.1
-  - Drizzle ORM: 0.39.1 → 0.39.3
-  - Drizzle Kit: 0.31.4 → 0.31.5
-  - Radix UI components: Updated to latest patch versions
-  - Express: Maintained at 4.21.2 (Express 5 requires vite.ts modifications which are not permitted)
-- **Express 4 Status**: EOL but maintained for compatibility; security updates may still be provided
-- **Testing**: Full E2E test suite passed after updates
-
-### October 26, 2025 (Security Hardening)
-- **Collections Feature**: Added tab-based collections for organizing bookmarks into multiple lists
-  - Schema: Added `collections` table with userId reference
-  - Backend: Implemented collection CRUD operations (GET, POST, PATCH, DELETE)
-  - Frontend: Index-style tab UI with "すべて" (all) tab and individual collection tabs
-  - Data integrity: When a collection is deleted, associated bookmarks have their `collectionId` set to null and remain in the "すべて" tab
-- **Settings Dialog**: Centralized configuration interface
-  - Collection management: Add, edit, rename, and delete collections
-  - Default tab setting: Choose which tab to display on login (persisted in localStorage)
-  - Removed inline delete buttons from tabs for cleaner UI
-- **Favicon D&D Feature**: Enhanced favicon input with drag-and-drop support
-  - FaviconInput component accepts URL text drops, image file drops (converted to base64), and manual URL input
-  - Visual feedback during drag-over with upload button fallback
-- **Self-Hosted Image Storage**: Eliminated external service dependencies
-  - Server-side image download system (fetchImageAsBase64 utility)
-  - All images stored as base64 data URIs in database
-  - External URLs never persisted - downloaded and converted to base64 on save
-  - Failed downloads return error instead of storing external URLs
-  - 10-second timeout with content-type validation
-  - Bookmarks created with favicon=null by default (no automatic downloads)
-- **Tab Design Improvements**: Index-style tabs with bottom border emphasis
-  - Active tab highlighted with primary-colored bottom border (2px)
-  - Clean, minimalist design without inline action buttons
-- **Error Message Display**: Login/registration forms now display error messages directly in the UI
-- **Security Hardening**: Comprehensive security improvements
-  - Password hashing: bcrypt with SALT_ROUNDS=10 for all passwords
-  - Session security: SESSION_SECRET environment variable now required
-  - CSRF protection: Session-based tokens, automatic validation, client-side retry logic
-  - SSRF defenses: DNS resolution, private IP blocking (IPv4/IPv6), redirect prevention, size limits (5MB)
-  - Error handling: Process crash prevention, minimal logging
-  - API security: PATCH /api/bookmarks/:id restricted to `memo` and `favicon` fields only
-- **Testing**: Complete E2E test coverage for authentication, collections, bookmark CRUD, favicon editing, settings dialog, default tab persistence, self-hosted image storage, and security features
-
-### External Dependencies
+## External Dependencies
 
 **Database**:
-- Neon Serverless PostgreSQL (configured via `DATABASE_URL` environment variable)
-- WebSocket connection support for serverless environments
-- Connection pooling via `@neondatabase/serverless`
+- Neon Serverless PostgreSQL (`@neondatabase/serverless` driver).
 
 **UI Component Libraries**:
-- Radix UI primitives (20+ component packages)
-- Lucide React for icons
-- cmdk for command palette patterns
-- vaul for drawer components
-- react-day-picker for date selection
+- Radix UI primitives.
+- Lucide React (icons).
+- cmdk (command palette).
+- vaul (drawer components).
+- react-day-picker (date selection).
 
 **Development Tools**:
-- Replit-specific plugins for development environment
-  - `@replit/vite-plugin-runtime-error-modal` for error overlay
-  - `@replit/vite-plugin-cartographer` for code mapping
-  - `@replit/vite-plugin-dev-banner` for development indicator
-- TypeScript for type safety
-- ESBuild for production server bundling
-- Tailwind CSS with PostCSS for styling
+- Replit-specific plugins: `@replit/vite-plugin-runtime-error-modal`, `@replit/vite-plugin-cartographer`, `@replit/vite-plugin-dev-banner`.
+- TypeScript.
+- ESBuild (server bundling).
+- Tailwind CSS with PostCSS.
+- Zod for runtime validation and `zod-validation-error`.
 
-**Validation**:
-- Zod for runtime type validation
-- zod-validation-error for user-friendly error messages
-- Integration with Drizzle ORM for schema validation
+**Email Service**:
+- Resend (via resend package) for email verification and password reset emails.
+- API key stored in RESEND_API_KEY environment variable.
 
 **Fonts**:
-- Google Fonts (Inter, Architects Daughter, DM Sans, Fira Code, Geist Mono)
-- Loaded via HTML link tags in client/index.html
+- Google Fonts (Inter, Architects Daughter, DM Sans, Fira Code, Geist Mono).
 
 **Build & Development**:
-- Vite for frontend development server and production builds
-- tsx for TypeScript execution in development
-- Hot Module Replacement (HMR) configured
-- Separate build outputs: `dist/public` for client, `dist` for server
+- Vite (frontend).
+- tsx (TypeScript execution in development).
