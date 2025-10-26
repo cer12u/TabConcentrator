@@ -88,15 +88,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: fromZodError(result.error).message });
       }
 
-      const { username, password } = result.data;
+      const { username, email, password } = result.data;
 
       const existingUser = await storage.getUserByUsername(username);
       if (existingUser) {
         return res.status(400).json({ error: "ユーザー名は既に使用されています" });
       }
 
+      const existingEmail = await storage.getUserByEmail(email);
+      if (existingEmail) {
+        return res.status(400).json({ error: "このメールアドレスは既に使用されています" });
+      }
+
       const hashedPassword = await bcrypt.hash(password, SALT_ROUNDS);
-      const user = await storage.createUser({ username, password: hashedPassword });
+      const verificationToken = randomBytes(32).toString('hex');
+      
+      const user = await storage.createUser({ 
+        username, 
+        email, 
+        password: hashedPassword 
+      });
+      
+      await storage.updateUser(user.id, { verificationToken });
 
       await new Promise<void>((resolve, reject) => {
         req.session.regenerate((err) => {
