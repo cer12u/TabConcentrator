@@ -14,19 +14,11 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-
-export interface Bookmark {
-  id: string;
-  url: string;
-  title: string;
-  thumbnail: string;
-  notes: string;
-  favicon?: string;
-}
+import type { Bookmark } from "@shared/schema";
 
 interface BookmarkCardProps {
   bookmark: Bookmark;
-  onUpdateNotes: (id: string, notes: string) => void;
+  onUpdateMemo: (id: string, memo: string) => void;
   onDelete: (id: string) => void;
 }
 
@@ -39,18 +31,18 @@ function getDomain(url: string): string {
   }
 }
 
-export default function BookmarkCard({ bookmark, onUpdateNotes, onDelete }: BookmarkCardProps) {
+export default function BookmarkCard({ bookmark, onUpdateMemo, onDelete }: BookmarkCardProps) {
   const [isEditing, setIsEditing] = useState(false);
-  const [notes, setNotes] = useState(bookmark.notes);
+  const [memo, setMemo] = useState(bookmark.memo || '');
 
   const handleSave = () => {
-    console.log("Saving notes for bookmark:", bookmark.id);
-    onUpdateNotes(bookmark.id, notes);
+    console.log("Saving memo for bookmark:", bookmark.id);
+    onUpdateMemo(bookmark.id, memo);
     setIsEditing(false);
   };
 
   const handleCancel = () => {
-    setNotes(bookmark.notes);
+    setMemo(bookmark.memo || '');
     setIsEditing(false);
   };
 
@@ -59,14 +51,14 @@ export default function BookmarkCard({ bookmark, onUpdateNotes, onDelete }: Book
     onDelete(bookmark.id);
   };
 
-  const domain = getDomain(bookmark.url);
+  const thumbnailUrl = bookmark.favicon || `https://via.placeholder.com/70x70/64748b/fff?text=${encodeURIComponent(bookmark.domain.charAt(0).toUpperCase())}`;
 
   return (
     <Card className="p-2 shadow-none border" data-testid={`card-bookmark-${bookmark.id}`}>
       <div className="flex gap-2">
         <div className="flex-shrink-0">
           <img
-            src={bookmark.thumbnail}
+            src={thumbnailUrl}
             alt={bookmark.title}
             className="w-[70px] h-[70px] object-cover rounded-sm bg-muted"
             data-testid={`img-thumbnail-${bookmark.id}`}
@@ -94,7 +86,7 @@ export default function BookmarkCard({ bookmark, onUpdateNotes, onDelete }: Book
                     className="text-xs font-mono text-muted-foreground"
                     data-testid={`text-domain-${bookmark.id}`}
                   >
-                    {domain}
+                    {bookmark.domain}
                   </span>
                 </div>
               </div>
@@ -102,8 +94,8 @@ export default function BookmarkCard({ bookmark, onUpdateNotes, onDelete }: Book
               {isEditing ? (
                 <div className="space-y-1.5 mt-1">
                   <Textarea
-                    value={notes}
-                    onChange={(e) => setNotes(e.target.value)}
+                    value={memo}
+                    onChange={(e) => setMemo(e.target.value)}
                     placeholder="メモを追加..."
                     className="h-[3.375rem] resize-none text-xs rounded-sm leading-[1.125rem]"
                     autoFocus
@@ -128,7 +120,7 @@ export default function BookmarkCard({ bookmark, onUpdateNotes, onDelete }: Book
               ) : (
                 <div className="h-[3.375rem] mt-0.5 overflow-hidden">
                   <p className="text-xs text-muted-foreground whitespace-pre-wrap leading-[1.125rem]" data-testid={`text-notes-${bookmark.id}`}>
-                    {bookmark.notes || ''}
+                    {bookmark.memo || ''}
                   </p>
                 </div>
               )}

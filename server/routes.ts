@@ -2,6 +2,7 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import session from "express-session";
 import createMemoryStore from "memorystore";
+import { z } from "zod";
 import { storage } from "./storage";
 import { insertUserSchema, insertBookmarkSchema } from "@shared/schema";
 import { fromZodError } from "zod-validation-error";
@@ -159,7 +160,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(403).json({ error: "このブックマークを編集する権限がありません" });
       }
 
-      const bookmark = await storage.updateBookmark(id, req.body);
+      const updateSchema = z.object({
+        memo: z.string().optional(),
+      });
+
+      const result = updateSchema.safeParse(req.body);
+      if (!result.success) {
+        return res.status(400).json({ error: fromZodError(result.error).message });
+      }
+
+      const bookmark = await storage.updateBookmark(id, result.data);
       res.json(bookmark);
     } catch (error) {
       console.error("Update bookmark error:", error);
