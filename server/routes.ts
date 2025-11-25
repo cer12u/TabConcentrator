@@ -1,6 +1,6 @@
 import type { Express } from "express";
 import session from "express-session";
-import connectPgSimple from "connect-pg-simple";
+import memorystore from "memorystore";
 import { z } from "zod";
 import bcrypt from "bcrypt";
 import { randomBytes } from "crypto";
@@ -19,7 +19,7 @@ declare module "express-session" {
   }
 }
 
-const PgSessionStore = connectPgSimple(session);
+const MemoryStore = memorystore(session);
 
 export async function registerRoutes(app: Express): Promise<void> {
   if (!process.env.SESSION_SECRET) {
@@ -31,20 +31,12 @@ export async function registerRoutes(app: Express): Promise<void> {
     throw new Error("APP_BASE_URL environment variable is required");
   }
 
-  if (!process.env.DATABASE_URL) {
-    throw new Error("DATABASE_URL environment variable is required for session storage");
-  }
-
   app.use(
     session({
       secret: process.env.SESSION_SECRET,
       resave: false,
       saveUninitialized: false,
-      store: new PgSessionStore({
-        conString: process.env.DATABASE_URL,
-        tableName: "session",
-        createTableIfMissing: true,
-      }),
+      store: new MemoryStore({ checkPeriod: 24 * 60 * 60 * 1000 }),
       cookie: {
         secure: process.env.NODE_ENV === "production",
         httpOnly: true,
