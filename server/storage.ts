@@ -1,12 +1,16 @@
 import crypto from "crypto";
 import {
+  bookmarks,
+  collections,
   type Bookmark,
   type Collection,
   type InsertBookmark,
   type InsertCollection,
   type InsertUser,
   type User,
+  users,
 } from "@shared/schema";
+import { GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { and, eq, isNull } from "drizzle-orm";
 
 export interface IStorage {
@@ -22,105 +26,20 @@ export interface IStorage {
   getCollectionsByUserId(userId: string): Promise<Collection[]>;
   getCollection(id: string): Promise<Collection | undefined>;
   createCollection(collection: InsertCollection): Promise<Collection>;
-  updateCollection(
-    id: string,
-    collection: Partial<InsertCollection>,
-  ): Promise<Collection | undefined>;
+  updateCollection(id: string, collection: Partial<InsertCollection>): Promise<Collection | undefined>;
   deleteCollection(id: string): Promise<boolean>;
 
-  getBookmarksByUserId(
-    userId: string,
-    collectionId?: string | null,
-  ): Promise<Bookmark[]>;
+  getBookmarksByUserId(userId: string, collectionId?: string | null): Promise<Bookmark[]>;
   getBookmark(id: string): Promise<Bookmark | undefined>;
   createBookmark(bookmark: InsertBookmark): Promise<Bookmark>;
-  updateBookmark(
-    id: string,
-    bookmark: Partial<InsertBookmark>,
-  ): Promise<Bookmark | undefined>;
+  updateBookmark(id: string, bookmark: Partial<InsertBookmark>): Promise<Bookmark | undefined>;
   deleteBookmark(id: string): Promise<boolean>;
 }
 
-type PersistedUser = Omit<User, "emailVerified" | "resetTokenExpiry"> & {
-  emailVerified: string | null;
-  resetTokenExpiry: string | null;
-};
-
-type PersistedCollection = Omit<Collection, "createdAt"> & { createdAt: string };
-type PersistedBookmark = Omit<Bookmark, "createdAt"> & { createdAt: string };
-
-type PersistedData = {
-  users: PersistedUser[];
-  collections: PersistedCollection[];
-  bookmarks: PersistedBookmark[];
-};
-
-type CachedData = {
-  data: PersistedData;
-  etag?: string;
-  loadedAt: number;
-};
-
-function deserialize(data: PersistedData): {
-  users: User[];
-  collections: Collection[];
-  bookmarks: Bookmark[];
-} {
-  return {
-    users: data.users.map((user) => ({
-      ...user,
-      emailVerified: user.emailVerified ? new Date(user.emailVerified) : null,
-      resetTokenExpiry: user.resetTokenExpiry
-        ? new Date(user.resetTokenExpiry)
-        : null,
-    })),
-    collections: data.collections.map((collection) => ({
-      ...collection,
-      createdAt: new Date(collection.createdAt),
-    })),
-    bookmarks: data.bookmarks.map((bookmark) => ({
-      ...bookmark,
-      createdAt: new Date(bookmark.createdAt),
-    })),
-  };
-}
-
-function serialize(data: {
-  users: User[];
-  collections: Collection[];
-  bookmarks: Bookmark[];
-}): PersistedData {
-  return {
-    users: data.users.map((user) => ({
-      ...user,
-      emailVerified: user.emailVerified ? user.emailVerified.toISOString() : null,
-      resetTokenExpiry: user.resetTokenExpiry
-        ? user.resetTokenExpiry.toISOString()
-        : null,
-    })),
-    collections: data.collections.map((collection) => ({
-      ...collection,
-      createdAt: collection.createdAt.toISOString(),
-    })),
-    bookmarks: data.bookmarks.map((bookmark) => ({
-      ...bookmark,
-      createdAt: bookmark.createdAt.toISOString(),
-    })),
-  };
-}
-
-async function streamToString(stream: any): Promise<string> {
-  if (!stream) return "";
-
-  if (typeof stream.transformToString === "function") {
-    return stream.transformToString();
-  }
-
-  const chunks: Buffer[] = [];
-  for await (const chunk of stream) {
-    chunks.push(typeof chunk === "string" ? Buffer.from(chunk) : chunk);
-  }
-  return Buffer.concat(chunks).toString("utf-8");
+function filterUndefined<T extends Record<string, unknown>>(input: T): Partial<T> {
+  return Object.fromEntries(
+    Object.entries(input).filter(([, value]) => value !== undefined),
+  ) as Partial<T>;
 }
 
 export class DbStorage implements IStorage {
@@ -177,34 +96,12 @@ export class DbStorage implements IStorage {
       return this.getUser(id);
     }
 
-      const existing = data.users[userIndex];
-      const updated: PersistedUser = {
-        ...existing,
-        ...this.toPersistedUser(update),
-      };
-
-      data.users[userIndex] = updated;
-      return deserialize({ ...data, users: [updated] }).users[0];
-    });
-  }
-
-  private toPersistedUser(update: Partial<User>): Partial<PersistedUser> {
-    const result: Partial<PersistedUser> = {};
-
-    if (update.username !== undefined) result.username = update.username;
-    if (update.email !== undefined) result.email = update.email;
-    if (update.password !== undefined) result.password = update.password;
-    if (update.emailVerified !== undefined)
-      result.emailVerified = update.emailVerified ? update.emailVerified.toISOString() : null;
-    if (update.verificationToken !== undefined)
-      result.verificationToken = update.verificationToken ?? null;
-    if (update.resetToken !== undefined) result.resetToken = update.resetToken ?? null;
-    if (update.resetTokenExpiry !== undefined)
-      result.resetTokenExpiry = update.resetTokenExpiry
-        ? update.resetTokenExpiry.toISOString()
-        : null;
-
-    return result;
+    const [user] = await db
+      .update(users)
+      .set(filteredUpdate)
+      .where(eq(users.id, id))
+      .returning();
+    return user;
   }
 
   async getCollectionsByUserId(userId: string): Promise<Collection[]> {
@@ -233,16 +130,12 @@ export class DbStorage implements IStorage {
       return this.getCollection(id);
     }
 
-      const existing = data.collections[index];
-      const updated: PersistedCollection = {
-        ...existing,
-        ...(update.name !== undefined ? { name: update.name } : {}),
-        ...(update.userId !== undefined ? { userId: update.userId } : {}),
-      };
-
-      data.collections[index] = updated;
-      return deserialize({ ...data, collections: [updated] }).collections[0];
-    });
+    const [updated] = await db
+      .update(collections)
+      .set(filteredUpdate)
+      .where(eq(collections.id, id))
+      .returning();
+    return updated;
   }
 
   async deleteCollection(id: string): Promise<boolean> {
@@ -252,10 +145,9 @@ export class DbStorage implements IStorage {
       .set({ collectionId: null })
       .where(eq(bookmarks.collectionId, id));
 
-      data.collections = data.collections.filter((collection) => collection.id !== id);
-      data.bookmarks = data.bookmarks.map((bookmark) =>
-        bookmark.collectionId === id ? { ...bookmark, collectionId: null } : bookmark,
-      );
+    const deleted = await db.delete(collections).where(eq(collections.id, id)).returning();
+    return deleted.length > 0;
+  }
 
   async getBookmarksByUserId(userId: string, collectionId?: string | null): Promise<Bookmark[]> {
     const { db } = await import("./db.js");
@@ -269,17 +161,8 @@ export class DbStorage implements IStorage {
       }
     }
 
-  async getBookmarksByUserId(
-    userId: string,
-    collectionId?: string | null,
-  ): Promise<Bookmark[]> {
-    const data = deserialize((await this.fetchData()).data);
-    return data.bookmarks.filter((bookmark) => {
-      if (bookmark.userId !== userId) return false;
-      if (collectionId === undefined) return true;
-      if (collectionId === null) return bookmark.collectionId === null;
-      return bookmark.collectionId === collectionId;
-    });
+    const whereClause = conditions.length === 1 ? conditions[0] : and(...conditions);
+    return db.query.bookmarks.findMany({ where: whereClause });
   }
 
   async getBookmark(id: string): Promise<Bookmark | undefined> {
@@ -294,17 +177,11 @@ export class DbStorage implements IStorage {
       .values({
         ...insertBookmark,
         collectionId: insertBookmark.collectionId ?? null,
-        url: insertBookmark.url,
-        title: insertBookmark.title,
-        domain: insertBookmark.domain,
         favicon: insertBookmark.favicon ?? null,
         memo: insertBookmark.memo ?? null,
-        createdAt: new Date().toISOString(),
-      };
-
-      data.bookmarks.push(bookmark);
-      return deserialize({ ...data, bookmarks: [bookmark] }).bookmarks[0]!;
-    });
+      })
+      .returning();
+    return bookmark;
   }
 
   async updateBookmark(
@@ -317,9 +194,12 @@ export class DbStorage implements IStorage {
       return this.getBookmark(id);
     }
 
-      data.bookmarks[index] = updated;
-      return deserialize({ ...data, bookmarks: [updated] }).bookmarks[0];
-    });
+    const [bookmark] = await db
+      .update(bookmarks)
+      .set(filteredUpdate)
+      .where(eq(bookmarks.id, id))
+      .returning();
+    return bookmark;
   }
 
   async deleteBookmark(id: string): Promise<boolean> {
@@ -463,6 +343,322 @@ export class InMemoryStorage implements IStorage {
     const initialLength = this.bookmarks.length;
     this.bookmarks = this.bookmarks.filter((bookmark) => bookmark.id !== id);
     return this.bookmarks.length < initialLength;
+  }
+}
+
+export type S3StorageOptions = {
+  bucket: string;
+  key: string;
+  cacheTtlMs: number;
+  lambdaWriteUrl?: string;
+};
+
+type S3StorageDependencies = {
+  client?: Pick<S3Client, "send">;
+  now?: () => number;
+  fetchFn?: typeof fetch;
+  randomUUID?: () => string;
+};
+
+type PersistedData = {
+  users: User[];
+  collections: Collection[];
+  bookmarks: Bookmark[];
+};
+
+type CachedData = {
+  data: PersistedData;
+  etag?: string;
+  expiresAt: number;
+};
+
+export class S3Storage implements IStorage {
+  private readonly client: Pick<S3Client, "send">;
+  private readonly now: () => number;
+  private readonly fetchFn: typeof fetch;
+  private readonly randomUUID: () => string;
+  private cache?: CachedData;
+
+  constructor(
+    private readonly options: S3StorageOptions,
+    dependencies: S3StorageDependencies = {},
+  ) {
+    this.client = dependencies.client ?? new S3Client({});
+    this.now = dependencies.now ?? Date.now;
+    this.fetchFn = dependencies.fetchFn ?? fetch;
+    this.randomUUID = dependencies.randomUUID ?? crypto.randomUUID;
+  }
+
+  async listUsers(): Promise<User[]> {
+    const { data } = await this.loadData();
+    return data.users;
+  }
+
+  async getUser(id: string): Promise<User | undefined> {
+    const { data } = await this.loadData();
+    return data.users.find((user) => user.id === id);
+  }
+
+  async getUserByUsername(username: string): Promise<User | undefined> {
+    const { data } = await this.loadData();
+    return data.users.find((user) => user.username === username);
+  }
+
+  async getUserByEmail(email: string): Promise<User | undefined> {
+    const { data } = await this.loadData();
+    return data.users.find((user) => user.email === email);
+  }
+
+  async getUserByVerificationToken(token: string): Promise<User | undefined> {
+    const { data } = await this.loadData();
+    return data.users.find((user) => user.verificationToken === token);
+  }
+
+  async getUserByResetToken(token: string): Promise<User | undefined> {
+    const { data } = await this.loadData();
+    const user = data.users.find((candidate) => candidate.resetToken === token);
+    if (!user) return undefined;
+    if (!user.resetTokenExpiry || user.resetTokenExpiry <= new Date()) {
+      return undefined;
+    }
+    return user;
+  }
+
+  async createUser(insertUser: InsertUser): Promise<User> {
+    if (this.options.lambdaWriteUrl) {
+      const user = await this.invokeLambda<User>("createUser", insertUser);
+      await this.refreshCache();
+      return user;
+    }
+
+    let created!: User;
+    await this.writeData((data) => {
+      created = {
+        id: this.randomUUID(),
+        emailVerified: null,
+        resetToken: null,
+        resetTokenExpiry: null,
+        verificationToken: null,
+        ...insertUser,
+      };
+      data.users.push(created);
+    });
+    return created;
+  }
+
+  async updateUser(id: string, update: Partial<User>): Promise<User | undefined> {
+    const filteredUpdate = filterUndefined(update);
+    if (Object.keys(filteredUpdate).length === 0) {
+      return this.getUser(id);
+    }
+
+    let updated: User | undefined;
+    await this.writeData((data) => {
+      const user = data.users.find((candidate) => candidate.id === id);
+      if (!user) return;
+      Object.assign(user, filteredUpdate);
+      updated = user;
+    });
+    return updated;
+  }
+
+  async getCollectionsByUserId(userId: string): Promise<Collection[]> {
+    const { data } = await this.loadData();
+    return data.collections.filter((collection) => collection.userId === userId);
+  }
+
+  async getCollection(id: string): Promise<Collection | undefined> {
+    const { data } = await this.loadData();
+    return data.collections.find((collection) => collection.id === id);
+  }
+
+  async createCollection(collection: InsertCollection): Promise<Collection> {
+    if (this.options.lambdaWriteUrl) {
+      const created = await this.invokeLambda<Collection>("createCollection", collection);
+      await this.refreshCache();
+      return created;
+    }
+
+    let created!: Collection;
+    await this.writeData((data) => {
+      created = {
+        id: this.randomUUID(),
+        createdAt: new Date(),
+        ...collection,
+      };
+      data.collections.push(created);
+    });
+    return created;
+  }
+
+  async updateCollection(
+    id: string,
+    update: Partial<InsertCollection>,
+  ): Promise<Collection | undefined> {
+    const filteredUpdate = filterUndefined(update);
+    if (Object.keys(filteredUpdate).length === 0) {
+      return this.getCollection(id);
+    }
+
+    let updated: Collection | undefined;
+    await this.writeData((data) => {
+      const collection = data.collections.find((candidate) => candidate.id === id);
+      if (!collection) return;
+      Object.assign(collection, filteredUpdate);
+      updated = collection;
+    });
+    return updated;
+  }
+
+  async deleteCollection(id: string): Promise<boolean> {
+    let deleted = false;
+    await this.writeData((data) => {
+      const before = data.collections.length;
+      data.collections = data.collections.filter((collection) => collection.id !== id);
+      deleted = data.collections.length < before;
+      data.bookmarks = data.bookmarks.map((bookmark) =>
+        bookmark.collectionId === id ? { ...bookmark, collectionId: null } : bookmark,
+      );
+    });
+    return deleted;
+  }
+
+  async getBookmarksByUserId(userId: string, collectionId?: string | null): Promise<Bookmark[]> {
+    const { data } = await this.loadData();
+    return data.bookmarks.filter((bookmark) => {
+      if (bookmark.userId !== userId) return false;
+      if (collectionId === undefined) return true;
+      if (collectionId === null) return bookmark.collectionId === null;
+      return bookmark.collectionId === collectionId;
+    });
+  }
+
+  async getBookmark(id: string): Promise<Bookmark | undefined> {
+    const { data } = await this.loadData();
+    return data.bookmarks.find((bookmark) => bookmark.id === id);
+  }
+
+  async createBookmark(bookmark: InsertBookmark): Promise<Bookmark> {
+    if (this.options.lambdaWriteUrl) {
+      const created = await this.invokeLambda<Bookmark>("createBookmark", bookmark);
+      await this.refreshCache();
+      return created;
+    }
+
+    let created!: Bookmark;
+    await this.writeData((data) => {
+      created = {
+        id: this.randomUUID(),
+        createdAt: new Date(),
+        favicon: bookmark.favicon ?? null,
+        memo: bookmark.memo ?? null,
+        collectionId: bookmark.collectionId ?? null,
+        ...bookmark,
+      };
+      data.bookmarks.push(created);
+    });
+    return created;
+  }
+
+  async updateBookmark(
+    id: string,
+    update: Partial<InsertBookmark>,
+  ): Promise<Bookmark | undefined> {
+    const filteredUpdate = filterUndefined(update);
+    if (Object.keys(filteredUpdate).length === 0) {
+      return this.getBookmark(id);
+    }
+
+    let updated: Bookmark | undefined;
+    await this.writeData((data) => {
+      const bookmark = data.bookmarks.find((candidate) => candidate.id === id);
+      if (!bookmark) return;
+      Object.assign(bookmark, filteredUpdate);
+      updated = bookmark;
+    });
+    return updated;
+  }
+
+  async deleteBookmark(id: string): Promise<boolean> {
+    let deleted = false;
+    await this.writeData((data) => {
+      const before = data.bookmarks.length;
+      data.bookmarks = data.bookmarks.filter((bookmark) => bookmark.id !== id);
+      deleted = data.bookmarks.length < before;
+    });
+    return deleted;
+  }
+
+  private async loadData(): Promise<CachedData> {
+    const now = this.now();
+    if (this.cache && this.cache.expiresAt > now) {
+      return this.cache;
+    }
+
+    const response = await this.client.send(
+      new GetObjectCommand({ Bucket: this.options.bucket, Key: this.options.key }),
+    );
+
+    const body = await response.Body?.transformToString();
+    const parsed = body ? (JSON.parse(body) as PersistedData) : this.emptyData();
+    this.cache = {
+      data: parsed,
+      etag: response.ETag,
+      expiresAt: now + this.options.cacheTtlMs,
+    };
+    return this.cache;
+  }
+
+  private async writeData(mutator: (data: PersistedData) => void): Promise<void> {
+    const cached = await this.loadData();
+    const cloned: PersistedData = {
+      users: [...cached.data.users],
+      collections: [...cached.data.collections],
+      bookmarks: [...cached.data.bookmarks],
+    };
+
+    mutator(cloned);
+
+    const result = await this.client.send(
+      new PutObjectCommand({
+        Bucket: this.options.bucket,
+        Key: this.options.key,
+        Body: JSON.stringify(cloned),
+        ContentType: "application/json",
+        IfMatch: cached.etag,
+      }),
+    );
+
+    this.cache = {
+      data: cloned,
+      etag: result.ETag ?? cached.etag,
+      expiresAt: this.now() + this.options.cacheTtlMs,
+    };
+  }
+
+  private async invokeLambda<T>(operation: string, payload: unknown): Promise<T> {
+    const response = await this.fetchFn(this.options.lambdaWriteUrl as string, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ operation, payload }),
+    });
+
+    if (!response.ok) {
+      const message = await response.text();
+      throw new Error(`Lambda write failed: ${response.status} ${message}`);
+    }
+
+    const json = (await response.json()) as { result: T };
+    return json.result;
+  }
+
+  private async refreshCache(): Promise<void> {
+    this.cache = undefined;
+    await this.loadData();
+  }
+
+  private emptyData(): PersistedData {
+    return { users: [], collections: [], bookmarks: [] };
   }
 }
 

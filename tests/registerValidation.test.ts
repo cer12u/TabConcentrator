@@ -51,6 +51,39 @@ test("registration schema rejects short password", () => {
   assert.match(result.error?.errors[0]?.message ?? "", /パスワードは/);
 });
 
+test("registration schema trims whitespace from username", () => {
+  const result = insertUserSchema.safeParse({
+    username: "  validName  ",
+    email: "user@example.com",
+    password: "a".repeat(PASSWORD_MIN_LENGTH + 2),
+  });
+
+  assert.equal(result.success, true);
+  assert.equal(result.data?.username, "validName");
+});
+
+test("registration schema rejects invalid email", () => {
+  const result = insertUserSchema.safeParse({
+    username: "validName",
+    email: "not-an-email",
+    password: "a".repeat(PASSWORD_MIN_LENGTH + 2),
+  });
+
+  assert.equal(result.success, false);
+  assert.match(result.error?.errors[0]?.message ?? "", /メールアドレス/);
+});
+
+test("registration schema requires password", () => {
+  const result = insertUserSchema.safeParse({
+    username: "validName",
+    email: "user@example.com",
+    // @ts-expect-error intentionally missing password for validation
+  });
+
+  assert.equal(result.success, false);
+  assert.match(result.error?.errors[0]?.message ?? "", /パスワードを入力/);
+});
+
 test("registration schema accepts valid payload", () => {
   const result = insertUserSchema.safeParse({
     username: "validName",
@@ -78,4 +111,21 @@ test("login schema rejects missing username", () => {
 test("login schema rejects missing password", () => {
   const result = loginSchema.safeParse({ username: "user", password: "" });
   assert.equal(result.success, false);
+});
+
+test("login schema rejects overly long username", () => {
+  const result = loginSchema.safeParse({
+    username: "a".repeat(USERNAME_MAX_LENGTH + 1),
+    password: "secret",
+  });
+
+  assert.equal(result.success, false);
+  assert.match(result.error?.errors[0]?.message ?? "", /ユーザー名は/);
+});
+
+test("login schema rejects whitespace-only username", () => {
+  const result = loginSchema.safeParse({ username: "   ", password: "secret" });
+
+  assert.equal(result.success, false);
+  assert.match(result.error?.errors[0]?.message ?? "", /ユーザー名を入力/);
 });
