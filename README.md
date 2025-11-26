@@ -43,16 +43,17 @@
 
 ### バックエンド
 - **Node.js + Express** - サーバーフレームワーク
-- **PostgreSQL (Neon)** - データベース
-- **Drizzle ORM** - 型安全なORMライブラリ
-- **express-session** - セッション管理
+- **Amazon S3** - JSON ストレージ（読み込み専用）
+- **AWS Lambda** - 追加/更新/削除を行い S3 オブジェクトを再生成
+- **express-session + memorystore** - セッション管理（小規模利用向け）
 - **Zod** - スキーマバリデーション
 
 ## セットアップ
 
 ### 前提条件
 - Node.js 18以上
-- PostgreSQLデータベース（または Neon のアカウント）
+- S3 バケットと JSON オブジェクトキー（例: `data.json`）
+- (推奨) 書き込み用の Lambda エンドポイント（Function URL や API Gateway）
 
 ### インストール
 
@@ -67,19 +68,19 @@ cd <repository-name>
 npm install
 ```
 
+> 💡 `@aws-sdk/client-s3` はデフォルトではインストールしません（CI がレジストリへ到達できない環境でも成功させるため）。実際に S3 へ接続して動かす環境では、別途 `npm install @aws-sdk/client-s3` を実行して依存を満たしてください。
+
 3. 環境変数を設定
 
 `.env`ファイルを作成し、以下の変数を設定：
 ```env
-DATABASE_URL=postgresql://user:password@host:port/database
+S3_BUCKET=your-bucket
+S3_KEY=data.json
+S3_REGION=ap-northeast-1
+LAMBDA_WRITE_URL=https://your-lambda-writer-url (任意: ローカル開発では未設定でも可)
 SESSION_SECRET=your-random-secret-key
 APP_BASE_URL=https://your-public-app-url
 RESEND_API_KEY=your-resend-api-key
-```
-
-4. データベースをセットアップ
-```bash
-npm run db:push
 ```
 
 5. 開発サーバーを起動
@@ -112,8 +113,8 @@ npm run dev
 3. API Gateway を REST / HTTP API として作成し、Lambda と統合します。環境変数は Lambda の設定または Systems Manager Parameter Store / Secrets Manager から読み込みます。
 
 ### セッションとデータストア
-- セッションは PostgreSQL（`connect-pg-simple`）に永続化されるため、Lambda のコールドスタートやスケールアウト時でも維持されます。
-- ブックマークやユーザー情報も Drizzle 経由で PostgreSQL に保存されます（Neon や RDS/Aurora Serverless などを利用できます）。
+- セッションは `memorystore` を利用したインメモリ管理です（小規模利用前提）。
+- ブックマークやユーザー情報は S3 上の JSON へ保存され、更新系は Lambda から S3 へ書き戻す構成です。
 
 ### フロントエンド配信
 - `npm run build` で生成される `dist/public` ディレクトリを S3 にアップロードし、CloudFront から配信します。
@@ -199,8 +200,7 @@ npm run dev
 ### スクリプト
 - `npm run dev` - 開発サーバー起動
 - `npm run build` - プロダクションビルド
-- `npm run db:push` - データベーススキーマ同期
-- `npm run db:studio` - Drizzle Studio起動
+- `npm run check` - TypeScript 型チェック
 
 ### プロジェクト構成
 ```
@@ -215,7 +215,7 @@ npm run dev
 │   └── utils/           # サーバーユーティリティ
 ├── shared/              # 共有コード
 │   └── schema.ts        # データベーススキーマ
-└── db/                  # データベース設定
+└── dist/                # ビルド済みサーバー出力
 ```
 
 ## ライセンス

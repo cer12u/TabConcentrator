@@ -1,6 +1,6 @@
 import type { Express } from "express";
 import session from "express-session";
-import connectPgSimple from "connect-pg-simple";
+import memorystore from "memorystore";
 import { z } from "zod";
 import bcrypt from "bcrypt";
 import { randomBytes } from "crypto";
@@ -20,7 +20,7 @@ declare module "express-session" {
   }
 }
 
-const PgSessionStore = connectPgSimple(session);
+const MemoryStore = memorystore(session);
 
 export async function registerRoutes(app: Express): Promise<void> {
   if (!process.env.SESSION_SECRET) {
