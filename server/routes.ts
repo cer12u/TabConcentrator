@@ -4,11 +4,12 @@ import memorystore from "memorystore";
 import { z } from "zod";
 import bcrypt from "bcrypt";
 import { randomBytes } from "crypto";
-import { storage } from "./storage";
+import { getStorage } from "./storage";
 import { insertUserSchema, insertBookmarkSchema, insertCollectionSchema, loginSchema, PASSWORD_MIN_LENGTH } from "@shared/schema";
 import { fromZodError } from "zod-validation-error";
 import { fetchImageAsBase64, isBase64Image, isHttpUrl } from "./utils/imageUtils";
 import { sendEmail, generateVerificationEmail, generatePasswordResetEmail } from "./utils/emailService";
+import { exportUserToS3 } from "./exporter";
 
 const SALT_ROUNDS = 10;
 
@@ -31,12 +32,26 @@ export async function registerRoutes(app: Express): Promise<void> {
     throw new Error("APP_BASE_URL environment variable is required");
   }
 
+  const useMemorySession = process.env.SESSION_STORE_STRATEGY === "memory";
+
+  if (!process.env.DATABASE_URL && !useMemorySession) {
+    throw new Error("DATABASE_URL environment variable is required for session storage");
+  }
+
+  const sessionStore = useMemorySession
+    ? new session.MemoryStore()
+    : new PgSessionStore({
+        conString: process.env.DATABASE_URL,
+        tableName: "session",
+        createTableIfMissing: true,
+      });
+
   app.use(
     session({
       secret: process.env.SESSION_SECRET,
       resave: false,
       saveUninitialized: false,
-      store: new MemoryStore({ checkPeriod: 24 * 60 * 60 * 1000 }),
+      store: sessionStore,
       cookie: {
         secure: process.env.NODE_ENV === "production",
         httpOnly: true,
@@ -83,6 +98,8 @@ export async function registerRoutes(app: Express): Promise<void> {
 
   // Apply CSRF validation to all /api routes except those explicitly handled above
   app.use('/api', validateCSRF);
+
+  const storage = getStorage();
 
   app.post("/api/auth/register", async (req, res) => {
     try {
@@ -322,6 +339,38 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
     next();
   };
+
+  app.post("/api/exports/s3", requireAuth, async (req, res) => {
+    if (!process.env.S3_EXPORT_BUCKET) {
+      return res.status(500).json({ error: "S3_EXPORT_BUCKET is not configured" });
+    }
+
+    const requiredToken = process.env.EXPORT_ACCESS_TOKEN;
+    const providedToken = req.headers["x-export-token"];
+    if (requiredToken && providedToken !== requiredToken) {
+      return res.status(401).json({ error: "export token is invalid" });
+    }
+
+    const userId = req.session.userId!;
+    const prefix = process.env.S3_EXPORT_PREFIX || "exports";
+    const key = `${prefix}/${userId}-${Date.now()}.json`;
+
+    try {
+      const result = await exportUserToS3(
+        userId,
+        process.env.S3_EXPORT_BUCKET,
+        key,
+      );
+      res.json({
+        message: "Exported data to S3",
+        key: result.key,
+        bucket: result.bucket,
+      });
+    } catch (error) {
+      console.error("Export error:", error);
+      res.status(502).json({ error: "Failed to export data to S3" });
+    }
+  });
 
   app.get("/api/collections", requireAuth, async (req, res) => {
     try {
