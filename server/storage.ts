@@ -10,6 +10,7 @@ import {
   type User,
   users,
 } from "@shared/schema";
+import { GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { and, eq, isNull } from "drizzle-orm";
 
 export interface IStorage {
@@ -342,6 +343,322 @@ export class InMemoryStorage implements IStorage {
     const initialLength = this.bookmarks.length;
     this.bookmarks = this.bookmarks.filter((bookmark) => bookmark.id !== id);
     return this.bookmarks.length < initialLength;
+  }
+}
+
+export type S3StorageOptions = {
+  bucket: string;
+  key: string;
+  cacheTtlMs: number;
+  lambdaWriteUrl?: string;
+};
+
+type S3StorageDependencies = {
+  client?: Pick<S3Client, "send">;
+  now?: () => number;
+  fetchFn?: typeof fetch;
+  randomUUID?: () => string;
+};
+
+type PersistedData = {
+  users: User[];
+  collections: Collection[];
+  bookmarks: Bookmark[];
+};
+
+type CachedData = {
+  data: PersistedData;
+  etag?: string;
+  expiresAt: number;
+};
+
+export class S3Storage implements IStorage {
+  private readonly client: Pick<S3Client, "send">;
+  private readonly now: () => number;
+  private readonly fetchFn: typeof fetch;
+  private readonly randomUUID: () => string;
+  private cache?: CachedData;
+
+  constructor(
+    private readonly options: S3StorageOptions,
+    dependencies: S3StorageDependencies = {},
+  ) {
+    this.client = dependencies.client ?? new S3Client({});
+    this.now = dependencies.now ?? Date.now;
+    this.fetchFn = dependencies.fetchFn ?? fetch;
+    this.randomUUID = dependencies.randomUUID ?? crypto.randomUUID;
+  }
+
+  async listUsers(): Promise<User[]> {
+    const { data } = await this.loadData();
+    return data.users;
+  }
+
+  async getUser(id: string): Promise<User | undefined> {
+    const { data } = await this.loadData();
+    return data.users.find((user) => user.id === id);
+  }
+
+  async getUserByUsername(username: string): Promise<User | undefined> {
+    const { data } = await this.loadData();
+    return data.users.find((user) => user.username === username);
+  }
+
+  async getUserByEmail(email: string): Promise<User | undefined> {
+    const { data } = await this.loadData();
+    return data.users.find((user) => user.email === email);
+  }
+
+  async getUserByVerificationToken(token: string): Promise<User | undefined> {
+    const { data } = await this.loadData();
+    return data.users.find((user) => user.verificationToken === token);
+  }
+
+  async getUserByResetToken(token: string): Promise<User | undefined> {
+    const { data } = await this.loadData();
+    const user = data.users.find((candidate) => candidate.resetToken === token);
+    if (!user) return undefined;
+    if (!user.resetTokenExpiry || user.resetTokenExpiry <= new Date()) {
+      return undefined;
+    }
+    return user;
+  }
+
+  async createUser(insertUser: InsertUser): Promise<User> {
+    if (this.options.lambdaWriteUrl) {
+      const user = await this.invokeLambda<User>("createUser", insertUser);
+      await this.refreshCache();
+      return user;
+    }
+
+    let created!: User;
+    await this.writeData((data) => {
+      created = {
+        id: this.randomUUID(),
+        emailVerified: null,
+        resetToken: null,
+        resetTokenExpiry: null,
+        verificationToken: null,
+        ...insertUser,
+      };
+      data.users.push(created);
+    });
+    return created;
+  }
+
+  async updateUser(id: string, update: Partial<User>): Promise<User | undefined> {
+    const filteredUpdate = filterUndefined(update);
+    if (Object.keys(filteredUpdate).length === 0) {
+      return this.getUser(id);
+    }
+
+    let updated: User | undefined;
+    await this.writeData((data) => {
+      const user = data.users.find((candidate) => candidate.id === id);
+      if (!user) return;
+      Object.assign(user, filteredUpdate);
+      updated = user;
+    });
+    return updated;
+  }
+
+  async getCollectionsByUserId(userId: string): Promise<Collection[]> {
+    const { data } = await this.loadData();
+    return data.collections.filter((collection) => collection.userId === userId);
+  }
+
+  async getCollection(id: string): Promise<Collection | undefined> {
+    const { data } = await this.loadData();
+    return data.collections.find((collection) => collection.id === id);
+  }
+
+  async createCollection(collection: InsertCollection): Promise<Collection> {
+    if (this.options.lambdaWriteUrl) {
+      const created = await this.invokeLambda<Collection>("createCollection", collection);
+      await this.refreshCache();
+      return created;
+    }
+
+    let created!: Collection;
+    await this.writeData((data) => {
+      created = {
+        id: this.randomUUID(),
+        createdAt: new Date(),
+        ...collection,
+      };
+      data.collections.push(created);
+    });
+    return created;
+  }
+
+  async updateCollection(
+    id: string,
+    update: Partial<InsertCollection>,
+  ): Promise<Collection | undefined> {
+    const filteredUpdate = filterUndefined(update);
+    if (Object.keys(filteredUpdate).length === 0) {
+      return this.getCollection(id);
+    }
+
+    let updated: Collection | undefined;
+    await this.writeData((data) => {
+      const collection = data.collections.find((candidate) => candidate.id === id);
+      if (!collection) return;
+      Object.assign(collection, filteredUpdate);
+      updated = collection;
+    });
+    return updated;
+  }
+
+  async deleteCollection(id: string): Promise<boolean> {
+    let deleted = false;
+    await this.writeData((data) => {
+      const before = data.collections.length;
+      data.collections = data.collections.filter((collection) => collection.id !== id);
+      deleted = data.collections.length < before;
+      data.bookmarks = data.bookmarks.map((bookmark) =>
+        bookmark.collectionId === id ? { ...bookmark, collectionId: null } : bookmark,
+      );
+    });
+    return deleted;
+  }
+
+  async getBookmarksByUserId(userId: string, collectionId?: string | null): Promise<Bookmark[]> {
+    const { data } = await this.loadData();
+    return data.bookmarks.filter((bookmark) => {
+      if (bookmark.userId !== userId) return false;
+      if (collectionId === undefined) return true;
+      if (collectionId === null) return bookmark.collectionId === null;
+      return bookmark.collectionId === collectionId;
+    });
+  }
+
+  async getBookmark(id: string): Promise<Bookmark | undefined> {
+    const { data } = await this.loadData();
+    return data.bookmarks.find((bookmark) => bookmark.id === id);
+  }
+
+  async createBookmark(bookmark: InsertBookmark): Promise<Bookmark> {
+    if (this.options.lambdaWriteUrl) {
+      const created = await this.invokeLambda<Bookmark>("createBookmark", bookmark);
+      await this.refreshCache();
+      return created;
+    }
+
+    let created!: Bookmark;
+    await this.writeData((data) => {
+      created = {
+        id: this.randomUUID(),
+        createdAt: new Date(),
+        favicon: bookmark.favicon ?? null,
+        memo: bookmark.memo ?? null,
+        collectionId: bookmark.collectionId ?? null,
+        ...bookmark,
+      };
+      data.bookmarks.push(created);
+    });
+    return created;
+  }
+
+  async updateBookmark(
+    id: string,
+    update: Partial<InsertBookmark>,
+  ): Promise<Bookmark | undefined> {
+    const filteredUpdate = filterUndefined(update);
+    if (Object.keys(filteredUpdate).length === 0) {
+      return this.getBookmark(id);
+    }
+
+    let updated: Bookmark | undefined;
+    await this.writeData((data) => {
+      const bookmark = data.bookmarks.find((candidate) => candidate.id === id);
+      if (!bookmark) return;
+      Object.assign(bookmark, filteredUpdate);
+      updated = bookmark;
+    });
+    return updated;
+  }
+
+  async deleteBookmark(id: string): Promise<boolean> {
+    let deleted = false;
+    await this.writeData((data) => {
+      const before = data.bookmarks.length;
+      data.bookmarks = data.bookmarks.filter((bookmark) => bookmark.id !== id);
+      deleted = data.bookmarks.length < before;
+    });
+    return deleted;
+  }
+
+  private async loadData(): Promise<CachedData> {
+    const now = this.now();
+    if (this.cache && this.cache.expiresAt > now) {
+      return this.cache;
+    }
+
+    const response = await this.client.send(
+      new GetObjectCommand({ Bucket: this.options.bucket, Key: this.options.key }),
+    );
+
+    const body = await response.Body?.transformToString();
+    const parsed = body ? (JSON.parse(body) as PersistedData) : this.emptyData();
+    this.cache = {
+      data: parsed,
+      etag: response.ETag,
+      expiresAt: now + this.options.cacheTtlMs,
+    };
+    return this.cache;
+  }
+
+  private async writeData(mutator: (data: PersistedData) => void): Promise<void> {
+    const cached = await this.loadData();
+    const cloned: PersistedData = {
+      users: [...cached.data.users],
+      collections: [...cached.data.collections],
+      bookmarks: [...cached.data.bookmarks],
+    };
+
+    mutator(cloned);
+
+    const result = await this.client.send(
+      new PutObjectCommand({
+        Bucket: this.options.bucket,
+        Key: this.options.key,
+        Body: JSON.stringify(cloned),
+        ContentType: "application/json",
+        IfMatch: cached.etag,
+      }),
+    );
+
+    this.cache = {
+      data: cloned,
+      etag: result.ETag ?? cached.etag,
+      expiresAt: this.now() + this.options.cacheTtlMs,
+    };
+  }
+
+  private async invokeLambda<T>(operation: string, payload: unknown): Promise<T> {
+    const response = await this.fetchFn(this.options.lambdaWriteUrl as string, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ operation, payload }),
+    });
+
+    if (!response.ok) {
+      const message = await response.text();
+      throw new Error(`Lambda write failed: ${response.status} ${message}`);
+    }
+
+    const json = (await response.json()) as { result: T };
+    return json.result;
+  }
+
+  private async refreshCache(): Promise<void> {
+    this.cache = undefined;
+    await this.loadData();
+  }
+
+  private emptyData(): PersistedData {
+    return { users: [], collections: [], bookmarks: [] };
   }
 }
 
