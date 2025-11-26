@@ -79,9 +79,19 @@ S3_KEY=data.json
 S3_REGION=ap-northeast-1
 LAMBDA_WRITE_URL=https://your-lambda-writer-url (任意: ローカル開発では未設定でも可)
 SESSION_SECRET=your-random-secret-key
-APP_BASE_URL=https://your-public-app-url
-RESEND_API_KEY=your-resend-api-key
+COGNITO_USER_POOL_ID=your-user-pool-id
+COGNITO_CLIENT_ID=your-user-pool-client-id
+COGNITO_REGION=ap-northeast-1
+AWS_ACCESS_KEY_ID=your-iam-access-key
+AWS_SECRET_ACCESS_KEY=your-iam-secret-key
+S3_CACHE_TTL_MS=300000
 ```
+
+`S3_BUCKET` と `S3_KEY` を指定すると、アプリ起動時に自動で S3 ストレージを選択します。S3 を使わない場合は `DATABASE_URL` を設定するか
+、`SESSION_STORE_STRATEGY=memory` でメモリセッションのみを利用してください（メモリストアはスケールアウト時にセッションが消えます）。
+
+認証は AWS Cognito に委譲します。`COGNITO_*` と AWS の署名用クレデンシャル（`AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`）を
+設定してください。サインアップ・ログイン・パスワードリセットは Cognito のユーザープール API を経由して行われます。
 
 5. 開発サーバーを起動
 ```bash
@@ -95,21 +105,13 @@ npm run dev
 このリポジトリは Express アプリを AWS Lambda + API Gateway 上で動作させるためのエントリポイント `server/lambda.ts` を提供しています。低トラフィック時にコストを抑えたい場合は以下の構成が推奨です。
 
 ### バックエンド API
-1. 本番ビルド
+1. 本番ビルド + パッケージ生成
    ```bash
-   npm run build
+   npm run package:lambda
    ```
-   生成物として `dist/index.js`（Express サーバー）と `client` のビルド済みアセットが作成されます。
-2. Lambda 用バンドル
-   - `esbuild` などで `server/lambda.ts` を Node.js 18 ランタイム向けにバンドルし、`node_modules` とともに ZIP 化します。
-   - 例：
-     ```bash
-     npx esbuild server/lambda.ts \
-       --bundle --platform=node --target=node18 \
-       --outfile=lambda/index.mjs
-     zip -r lambda.zip lambda node_modules dist shared client
-     ```
-   - Lambda のハンドラーには `lambda/index.handler` を指定します。
+   `build/lambda.zip` に Lambda へアップロード可能な ZIP を生成します（`dist`/`shared`/`client`/`node_modules` をまとめ、エントリーポイントは
+   `index.mjs`）。
+2. Lambda のハンドラーには `index.handler` を指定します。
 3. API Gateway を REST / HTTP API として作成し、Lambda と統合します。環境変数は Lambda の設定または Systems Manager Parameter Store / Secrets Manager から読み込みます。
 
 ### セッションとデータストア
