@@ -1,6 +1,7 @@
 import type { Express } from "express";
 import session from "express-session";
 import memorystore from "memorystore";
+import connectPgSimple from "connect-pg-simple";
 import { z } from "zod";
 import bcrypt from "bcrypt";
 import { randomBytes } from "crypto";
@@ -21,6 +22,7 @@ declare module "express-session" {
 }
 
 const MemoryStore = memorystore(session);
+const PgSessionStore = connectPgSimple(session);
 
 export async function registerRoutes(app: Express): Promise<void> {
   if (!process.env.SESSION_SECRET) {
@@ -39,7 +41,7 @@ export async function registerRoutes(app: Express): Promise<void> {
   }
 
   const sessionStore = useMemorySession
-    ? new session.MemoryStore()
+    ? new MemoryStore({ checkPeriod: 86400000 })
     : new PgSessionStore({
         conString: process.env.DATABASE_URL,
         tableName: "session",

@@ -23,7 +23,7 @@ async function createDefaultClient(): Promise<S3LikeClient> {
     const sdkClient = new S3Client({ region });
     return {
       send: (command) => sdkClient.send(command as any),
-      putObject: (input) => sdkClient.send(new PutObjectCommand(input) as any),
+      putObject: (input) => sdkClient.send(new PutObjectCommand(input as any) as any),
     };
   } catch (error) {
     throw new Error(
