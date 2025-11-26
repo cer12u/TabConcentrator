@@ -126,6 +126,27 @@ npm run dev
 - API Gateway 経由で `/api/csrf-token`, `/api/auth/register`, `/api/auth/login` が期待通り動作することを確認してください。
 - CloudFront 経由でフロントエンドにアクセスし、登録・ログイン・パスワードリセットのフローがサーバレス構成で正常に動くかを確認します。
 
+## 運用：RDB から S3 へのエクスポート
+
+### エクスポートスクリプト
+- 既存データベースの内容をユーザー単位で JSON に変換し、S3 にアップロードするスクリプトを追加しました。
+- 実行前に `S3_EXPORT_BUCKET`（必須）と `S3_EXPORT_PREFIX`（任意）を設定し、AWS 認証情報を有効にしてください。
+- `@aws-sdk/client-s3` が環境にインストールされている必要があります（エクスポートを実行する環境で追加してください）。
+- 実行コマンド例：
+  ```bash
+  S3_EXPORT_BUCKET=my-export-bucket \
+  S3_EXPORT_PREFIX=backups \
+  AWS_REGION=ap-northeast-1 \
+  DATABASE_URL=postgres://... \
+  npm run export:s3
+  ```
+- 出力例：`s3://my-export-bucket/backups/<user-id>-migration.json` に各ユーザーのブックマークやコレクションをまとめた JSON を保存します。
+
+### API からのオンデマンドエクスポート
+- 認証済みユーザーは `POST /api/exports/s3` を呼び出すことで、自身のデータを S3 にエクスポートできます。
+- 環境変数 `EXPORT_ACCESS_TOKEN` を設定すると、`X-Export-Token` ヘッダーによる追加認証が求められます。
+- テストや CI では S3 クライアントをモック化しており、外部ネットワークに依存せずに成功/失敗パスを検証できます。
+
 ## 使い方
 
 ### 初回セットアップ
