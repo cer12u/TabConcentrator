@@ -11,6 +11,7 @@ import { PASSWORD_MIN_LENGTH } from "@shared/constants";
 export default function ResetPassword() {
   const [, setLocation] = useLocation();
   const [token, setToken] = useState("");
+  const [usernameOrEmail, setUsernameOrEmail] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -20,10 +21,15 @@ export default function ResetPassword() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const urlToken = params.get("token");
+    const usernameParam = params.get("username") || params.get("email");
     if (urlToken) {
       setToken(urlToken);
     } else {
       setErrorMessage("無効なリセットリンクです");
+    }
+
+    if (usernameParam) {
+      setUsernameOrEmail(usernameParam);
     }
   }, []);
 
@@ -32,6 +38,11 @@ export default function ResetPassword() {
 
     if (!token) {
       setErrorMessage("無効なリセットリンクです");
+      return;
+    }
+
+    if (!usernameOrEmail.trim()) {
+      setErrorMessage("ユーザー名またはメールアドレスを入力してください");
       return;
     }
 
@@ -48,7 +59,14 @@ export default function ResetPassword() {
     setIsLoading(true);
     setErrorMessage("");
     try {
-      const res = await apiRequest("POST", "/api/auth/reset-password", { token, newPassword });
+      const payload: Record<string, string> = { token, newPassword };
+      if (usernameOrEmail.includes("@")) {
+        payload.email = usernameOrEmail.trim();
+      } else {
+        payload.username = usernameOrEmail.trim();
+      }
+
+      const res = await apiRequest("POST", "/api/auth/reset-password", payload);
       await res.json();
       setIsSuccess(true);
     } catch (error: unknown) {
@@ -63,8 +81,8 @@ export default function ResetPassword() {
     }
   };
 
-  const goToHome = () => {
-    setLocation("/");
+  const goToLogin = () => {
+    setLocation("/login");
   };
 
   if (isSuccess) {
@@ -92,7 +110,7 @@ export default function ResetPassword() {
             </div>
           </CardContent>
           <CardFooter className="flex justify-center">
-            <Button onClick={goToHome} className="w-full" data-testid="button-go-home">
+            <Button onClick={goToLogin} className="w-full" data-testid="button-go-home">
               ログインする
             </Button>
           </CardFooter>
@@ -124,6 +142,19 @@ export default function ResetPassword() {
             </div>
           )}
           <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="username-or-email">ユーザー名またはメールアドレス</Label>
+              <Input
+                id="username-or-email"
+                type="text"
+                placeholder="username または email@example.com"
+                value={usernameOrEmail}
+                onChange={(e) => setUsernameOrEmail(e.target.value)}
+                required
+                disabled={!token}
+                data-testid="input-username-or-email"
+              />
+            </div>
             <div className="space-y-2">
               <Label htmlFor="new-password">新しいパスワード</Label>
               <Input
@@ -166,6 +197,7 @@ export default function ResetPassword() {
               disabled={
                 isLoading ||
                 !token ||
+                !usernameOrEmail.trim() ||
                 newPassword.length < PASSWORD_MIN_LENGTH ||
                 confirmPassword.length < PASSWORD_MIN_LENGTH ||
                 newPassword !== confirmPassword
@@ -179,7 +211,7 @@ export default function ResetPassword() {
         <CardFooter className="flex justify-center">
           <Button
             variant="ghost"
-            onClick={goToHome}
+            onClick={goToLogin}
             className="text-sm"
             data-testid="button-back-to-home"
           >
