@@ -34,10 +34,15 @@ export async function registerRoutes(app: Express): Promise<void> {
     throw new Error("APP_BASE_URL environment variable is required");
   }
 
-  const useMemorySession = process.env.SESSION_STORE_STRATEGY === "memory";
+  const hasDatabase = Boolean(process.env.DATABASE_URL);
+  const useMemorySession = process.env.SESSION_STORE_STRATEGY === "memory" || !hasDatabase;
 
-  if (!process.env.DATABASE_URL && !useMemorySession) {
+  if (!hasDatabase && !useMemorySession) {
     throw new Error("DATABASE_URL environment variable is required for session storage");
+  }
+
+  if (useMemorySession && app.get("env") === "production") {
+    console.warn("SESSION_STORE_STRATEGY=memory: sessions will reset when instances recycle.");
   }
 
   const sessionStore = useMemorySession
