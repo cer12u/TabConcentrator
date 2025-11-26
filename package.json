@@ -11,7 +11,8 @@
     "db:push": "drizzle-kit push",
     "test": "SESSION_STORE_STRATEGY=memory bash -lc 'shopt -s globstar nullglob; tsx --test tests/**/*.test.ts'",
     "test:s3": "SESSION_STORE_STRATEGY=memory RUN_S3_TESTS=1 tsx --test tests/s3Integration.test.ts",
-    "export:s3": "tsx scripts/export-to-s3.ts"
+    "export:s3": "tsx scripts/export-to-s3.ts",
+    "package:lambda": "tsx scripts/package-lambda.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
