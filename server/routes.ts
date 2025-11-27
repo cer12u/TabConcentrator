@@ -279,7 +279,7 @@ export async function registerRoutes(app: Express): Promise<void> {
         username,
         emailVerified,
       });
-    } catch (error) {
+    } catch (error) {https://github.com/cer12u/TabConcentrator/pull/7/conflict?name=README.md&ancestor_oid=ec29a91666a61ab21e2cd7b255a79e7fc88670a4&base_oid=10cff75b01f16be55cf4e08d17ba0b4738681d8e&head_oid=c1f91745bdbca167e32f5e57676b47a1ae76ce85
       console.error("Email verification error:", error);
       res.status(500).json({ error: "メール確認に失敗しました" });
     }
