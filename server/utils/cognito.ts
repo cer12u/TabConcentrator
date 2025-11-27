@@ -76,8 +76,11 @@ async function callCognito<T>(action: string, body: Record<string, unknown>, con
     ["host", host],
     ["x-amz-date", amzDate],
     ["x-amz-target", `AWSCognitoIdentityProviderService.${action}`],
-    ...(sessionToken ? [["x-amz-security-token", sessionToken]] : []),
   ];
+
+  if (sessionToken) {
+    canonicalHeaderEntries.push(["x-amz-security-token", sessionToken]);
+  }
 
   canonicalHeaderEntries.sort((a, b) => a[0].localeCompare(b[0]));
 
