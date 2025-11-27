@@ -1,0 +1,55 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  NODE_VERSION: 20
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Install AWS SDK for S3
+        run: npm install --no-save @aws-sdk/client-s3
+
+      - name: Build web assets and Lambda artifact
+        run: npm run package:lambda
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Update Lambda environment variables (optional)
+        if: secrets.LAMBDA_ENV_VARS != ''
+        run: aws lambda update-function-configuration --function-name ${{ secrets.LAMBDA_FUNCTION_NAME }} --environment "Variables=${{ secrets.LAMBDA_ENV_VARS }}"
+
+      - name: Sync static assets to S3
+        run: aws s3 sync dist/public s3://${{ secrets.FRONTEND_BUCKET }} --delete
+
+      - name: Update Lambda function code
+        run: aws lambda update-function-code --function-name ${{ secrets.LAMBDA_FUNCTION_NAME }} --zip-file fileb://build/lambda.zip
+
+      - name: Invalidate CloudFront (optional)
+        if: secrets.CLOUDFRONT_DISTRIBUTION_ID != ''
+        run: aws cloudfront create-invalidation --distribution-id ${{ secrets.CLOUDFRONT_DISTRIBUTION_ID }} --paths "/*"

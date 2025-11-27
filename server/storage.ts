@@ -663,9 +663,29 @@ export class S3Storage implements IStorage {
 }
 
 function createDefaultStorage(): IStorage {
+  const bucket = process.env.S3_BUCKET;
+  const key = process.env.S3_KEY;
+  const hasS3Config = Boolean(bucket && key);
+
+  if (hasS3Config) {
+    const cacheTtlMs = Number.parseInt(process.env.S3_CACHE_TTL_MS ?? "300000", 10);
+    const region = process.env.S3_REGION || process.env.AWS_REGION || "us-east-1";
+
+    return new S3Storage(
+      {
+        bucket: bucket as string,
+        key: key as string,
+        cacheTtlMs: Number.isNaN(cacheTtlMs) ? 300000 : cacheTtlMs,
+        lambdaWriteUrl: process.env.LAMBDA_WRITE_URL,
+      },
+      { client: new S3Client({ region }) },
+    );
+  }
+
   if (process.env.DATABASE_URL) {
     return new DbStorage();
   }
+
   return new InMemoryStorage();
 }
 
