@@ -9,15 +9,39 @@ import { getStorage } from "./storage";
 import { insertUserSchema, insertBookmarkSchema, insertCollectionSchema, loginSchema, PASSWORD_MIN_LENGTH } from "@shared/schema";
 import { fromZodError } from "zod-validation-error";
 import { fetchImageAsBase64, isBase64Image, isHttpUrl } from "./utils/imageUtils";
-import { sendEmail, generateVerificationEmail, generatePasswordResetEmail } from "./utils/emailService";
 import { exportUserToS3 } from "./exporter";
+import {
+  cognitoConfirmForgotPassword,
+  cognitoForgotPassword,
+  cognitoGlobalSignOut,
+  cognitoInitiateAuth,
+  cognitoSignUp,
+  getCognitoConfig,
+  verifyCognitoIdToken,
+} from "./utils/cognito";
 
 const SALT_ROUNDS = 10;
+const PLACEHOLDER_PASSWORD = bcrypt.hashSync("cognito-managed-password", SALT_ROUNDS);
 
 declare module "express-session" {
   interface SessionData {
     userId?: string;
     csrfToken?: string;
+    cognitoAccessToken?: string;
+    cognitoIdToken?: string;
+    cognitoRefreshToken?: string;
+    cognitoUsername?: string;
+    cognitoEmail?: string;
+  }
+}
+
+declare module "express-serve-static-core" {
+  interface Request {
+    authUser?: {
+      username?: string;
+      email?: string;
+      emailVerified?: boolean;
+    };
   }
 }
 
@@ -29,10 +53,9 @@ export async function registerRoutes(app: Express): Promise<void> {
     throw new Error("SESSION_SECRET environment variable is required");
   }
 
-  const appBaseUrl = process.env.APP_BASE_URL;
-  if (!appBaseUrl) {
-    throw new Error("APP_BASE_URL environment variable is required");
-  }
+  // Validate Cognito configuration early so misconfiguration fails fast
+  getCognitoConfig();
+
 
   const hasDatabase = Boolean(process.env.DATABASE_URL);
   const useMemorySession = process.env.SESSION_STORE_STRATEGY === "memory" || !hasDatabase;
@@ -108,6 +131,35 @@ export async function registerRoutes(app: Express): Promise<void> {
 
   const storage = getStorage();
 
+  async function ensureLocalUser(
+    username: string,
+    email?: string,
+    emailVerified?: boolean,
+  ) {
+    let user = await storage.getUserByUsername(username);
+    if (!user) {
+      user = await storage.createUser({
+        username,
+        email: email ?? `${username}@example.invalid`,
+        password: PLACEHOLDER_PASSWORD,
+      });
+    }
+
+    const updates: Record<string, unknown> = {};
+    if (email && email !== user.email) {
+      updates.email = email;
+    }
+    if (emailVerified && !user.emailVerified) {
+      updates.emailVerified = new Date();
+    }
+
+    if (Object.keys(updates).length > 0) {
+      user = (await storage.updateUser(user.id, updates)) ?? user;
+    }
+
+    return user;
+  }
+
   app.post("/api/auth/register", async (req, res) => {
     try {
       const result = insertUserSchema.safeParse(req.body);
@@ -116,7 +168,6 @@ export async function registerRoutes(app: Express): Promise<void> {
       }
 
       const { username, email, password } = result.data;
-
       const existingUser = await storage.getUserByUsername(username);
       if (existingUser) {
         return res.status(400).json({ error: "ユーザー名は既に使用されています" });
@@ -127,46 +178,14 @@ export async function registerRoutes(app: Express): Promise<void> {
         return res.status(400).json({ error: "このメールアドレスは既に使用されています" });
       }
 
-      const hashedPassword = await bcrypt.hash(password, SALT_ROUNDS);
-      const verificationToken = randomBytes(32).toString('hex');
-      
-      const user = await storage.createUser({ 
-        username, 
-        email, 
-        password: hashedPassword 
-      });
-      
-      await storage.updateUser(user.id, { verificationToken });
+      await cognitoSignUp({ username, password, email });
+      await ensureLocalUser(username, email, false);
 
-      const verificationUrl = new URL("/verify-email", appBaseUrl);
-      verificationUrl.searchParams.set("token", verificationToken);
-      const emailHtml = generateVerificationEmail(username, verificationUrl.toString());
-      
-      await sendEmail({
-        to: email,
-        subject: 'メールアドレスの確認',
-        html: emailHtml,
-      });
-
-      await new Promise<void>((resolve, reject) => {
-        req.session.regenerate((err) => {
-          if (err) {
-            reject(err);
-          } else {
-            resolve();
-          }
-        });
-      });
-
-      req.session.userId = user.id;
-      req.session.csrfToken = randomBytes(32).toString('hex');
-      
-      res.json({ 
-        id: user.id, 
-        username: user.username,
-        email: user.email,
+      res.json({
+        username,
+        email,
         emailVerified: false,
-        message: '登録が完了しました。確認メールをお送りしましたので、メールアドレスを確認してください。'
+        message: "登録が完了しました。Cognitoからの確認メールをご確認ください。",
       });
     } catch (error) {
       console.error("Register error:", error);
@@ -182,16 +201,12 @@ export async function registerRoutes(app: Express): Promise<void> {
       }
 
       const { username, password } = result.data;
+      const authResult = await cognitoInitiateAuth({ username, password });
+      const payload = await verifyCognitoIdToken(authResult.idToken);
+      const email = typeof payload.email === "string" ? payload.email : undefined;
+      const emailVerified = payload.email_verified === true;
 
-      const user = await storage.getUserByUsername(username);
-      if (!user) {
-        return res.status(401).json({ error: "ユーザー名またはパスワードが正しくありません" });
-      }
-
-      const isPasswordValid = await bcrypt.compare(password, user.password);
-      if (!isPasswordValid) {
-        return res.status(401).json({ error: "ユーザー名またはパスワードが正しくありません" });
-      }
+      const user = await ensureLocalUser(username, email, emailVerified);
 
       await new Promise<void>((resolve, reject) => {
         req.session.regenerate((err) => {
@@ -205,10 +220,17 @@ export async function registerRoutes(app: Express): Promise<void> {
 
       req.session.userId = user.id;
       req.session.csrfToken = randomBytes(32).toString('hex');
-      
-      res.json({ 
-        id: user.id, 
-        username: user.username 
+      req.session.cognitoAccessToken = authResult.accessToken;
+      req.session.cognitoIdToken = authResult.idToken;
+      req.session.cognitoRefreshToken = authResult.refreshToken;
+      req.session.cognitoUsername = username;
+      req.session.cognitoEmail = email;
+
+      res.json({
+        id: user.id,
+        username: user.username,
+        email: user.email,
+        emailVerified,
       });
     } catch (error) {
       console.error("Login error:", error);
@@ -217,7 +239,16 @@ export async function registerRoutes(app: Express): Promise<void> {
   });
 
   app.post("/api/auth/logout", (req, res) => {
-    req.session.destroy((err) => {
+    const accessToken = req.session.cognitoAccessToken;
+    req.session.destroy(async (err) => {
+      if (accessToken) {
+        try {
+          await cognitoGlobalSignOut(accessToken);
+        } catch (signOutError) {
+          console.warn("Cognito global sign-out failed", signOutError);
+        }
+      }
+
       if (err) {
         return res.status(500).json({ error: "ログアウトに失敗しました" });
       }
@@ -227,27 +258,28 @@ export async function registerRoutes(app: Express): Promise<void> {
 
   app.get("/api/auth/verify-email", async (req, res) => {
     try {
-      const { token } = req.query;
-      
-      if (!token || typeof token !== 'string') {
-        return res.status(400).json({ error: "無効なトークンです" });
+      if (!req.session.cognitoIdToken) {
+        return res.status(401).json({ error: "ログインしていません" });
       }
 
-      const user = await storage.getUserByVerificationToken(token);
-      if (!user) {
-        return res.status(404).json({ error: "無効または期限切れの確認リンクです" });
+      const payload = await verifyCognitoIdToken(req.session.cognitoIdToken);
+      const username =
+        (payload["cognito:username"] as string | undefined) ||
+        (payload.username as string | undefined) ||
+        req.session.cognitoUsername ||
+        "";
+
+      const emailVerified = payload.email_verified === true;
+      if (emailVerified && req.session.userId) {
+        await storage.updateUser(req.session.userId, { emailVerified: new Date() });
       }
 
-      await storage.updateUser(user.id, {
-        emailVerified: new Date(),
-        verificationToken: null,
+      res.json({
+        message: emailVerified ? "メールアドレスが確認されました" : "メールアドレスは未確認です",
+        username,
+        emailVerified,
       });
-
-      res.json({ 
-        message: "メールアドレスが確認されました",
-        username: user.username 
-      });
-    } catch (error) {
+    } catch (error) {https://github.com/cer12u/TabConcentrator/pull/7/conflict?name=README.md&ancestor_oid=ec29a91666a61ab21e2cd7b255a79e7fc88670a4&base_oid=10cff75b01f16be55cf4e08d17ba0b4738681d8e&head_oid=c1f91745bdbca167e32f5e57676b47a1ae76ce85
       console.error("Email verification error:", error);
       res.status(500).json({ error: "メール確認に失敗しました" });
     }
@@ -255,36 +287,21 @@ export async function registerRoutes(app: Express): Promise<void> {
 
   app.post("/api/auth/request-password-reset", async (req, res) => {
     try {
-      const { email } = req.body;
-      
-      if (!email) {
-        return res.status(400).json({ error: "メールアドレスを入力してください" });
+      const { email, username } = req.body as { email?: string; username?: string };
+
+      const targetUsername = username
+        ? username
+        : email
+          ? (await storage.getUserByEmail(email))?.username
+          : undefined;
+
+      if (!targetUsername) {
+        return res.status(400).json({ error: "ユーザー名またはメールアドレスを入力してください" });
       }
 
-      const user = await storage.getUserByEmail(email);
-      if (!user) {
-        return res.json({ message: "リセットメールを送信しました（アカウントが存在する場合）" });
-      }
+      await cognitoForgotPassword(targetUsername);
 
-      const resetToken = randomBytes(32).toString('hex');
-      const resetTokenExpiry = new Date(Date.now() + 60 * 60 * 1000);
-
-      await storage.updateUser(user.id, {
-        resetToken,
-        resetTokenExpiry,
-      });
-
-      const resetUrl = new URL("/reset-password", appBaseUrl);
-      resetUrl.searchParams.set("token", resetToken);
-      const emailHtml = generatePasswordResetEmail(user.username, resetUrl.toString());
-      
-      await sendEmail({
-        to: user.email,
-        subject: 'パスワードのリセット',
-        html: emailHtml,
-      });
-
-      res.json({ message: "リセットメールを送信しました（アカウントが存在する場合）" });
+      res.json({ message: "リセットコードを送信しました（アカウントが存在する場合）" });
     } catch (error) {
       console.error("Password reset request error:", error);
       res.status(500).json({ error: "リセット要求に失敗しました" });
@@ -293,27 +310,32 @@ export async function registerRoutes(app: Express): Promise<void> {
 
   app.post("/api/auth/reset-password", async (req, res) => {
     try {
-      const { token, newPassword } = req.body;
-      
+      const { token, newPassword, username, email } = req.body as {
+        token?: string;
+        newPassword?: string;
+        username?: string;
+        email?: string;
+      };
+
       if (!token || !newPassword) {
-        return res.status(400).json({ error: "トークンと新しいパスワードが必要です" });
+        return res.status(400).json({ error: "コードと新しいパスワードが必要です" });
       }
 
       if (newPassword.length < PASSWORD_MIN_LENGTH) {
         return res.status(400).json({ error: `パスワードは${PASSWORD_MIN_LENGTH}文字以上である必要があります` });
       }
 
-      const user = await storage.getUserByResetToken(token);
-      if (!user) {
-        return res.status(404).json({ error: "無効または期限切れのリセットリンクです" });
+      const targetUsername = username
+        ? username
+        : email
+          ? (await storage.getUserByEmail(email))?.username
+          : undefined;
+
+      if (!targetUsername) {
+        return res.status(400).json({ error: "ユーザー名を指定してください" });
       }
 
-      const hashedPassword = await bcrypt.hash(newPassword, SALT_ROUNDS);
-      await storage.updateUser(user.id, {
-        password: hashedPassword,
-        resetToken: null,
-        resetTokenExpiry: null,
-      });
+      await cognitoConfirmForgotPassword({ username: targetUsername, code: token, newPassword });
 
       res.json({ message: "パスワードがリセットされました" });
     } catch (error) {
@@ -323,28 +345,77 @@ export async function registerRoutes(app: Express): Promise<void> {
   });
 
   app.get("/api/auth/me", async (req, res) => {
-    if (!req.session.userId) {
+    if (!req.session.cognitoIdToken) {
       return res.status(401).json({ error: "ログインしていません" });
     }
 
-    const user = await storage.getUser(req.session.userId);
-    if (!user) {
-      return res.status(404).json({ error: "ユーザーが見つかりません" });
-    }
+    try {
+      const payload = await verifyCognitoIdToken(req.session.cognitoIdToken);
+      const username =
+        (payload["cognito:username"] as string | undefined) ||
+        (payload.username as string | undefined) ||
+        req.session.cognitoUsername;
+      const email = (payload.email as string | undefined) || req.session.cognitoEmail;
+      const emailVerified = payload.email_verified === true;
 
-    res.json({ 
-      id: user.id, 
-      username: user.username,
-      email: user.email,
-      emailVerified: user.emailVerified ? true : false
-    });
+      if (!username) {
+        return res.status(401).json({ error: "ログインしていません" });
+      }
+
+      const user = await ensureLocalUser(username, email, emailVerified);
+      req.session.userId = user.id;
+
+      res.json({
+        id: user.id,
+        username: user.username,
+        email: user.email,
+        emailVerified,
+      });
+    } catch (error) {
+      console.error("/api/auth/me error", error);
+      return res.status(401).json({ error: "ログインしていません" });
+    }
   });
 
   const requireAuth = (req: any, res: any, next: any) => {
-    if (!req.session.userId) {
+    if (!req.session.cognitoIdToken) {
       return res.status(401).json({ error: "ログインしていません" });
     }
-    next();
+
+    verifyCognitoIdToken(req.session.cognitoIdToken)
+      .then(async (payload) => {
+        const username =
+          (payload["cognito:username"] as string | undefined) ||
+          (payload.username as string | undefined) ||
+          req.session.cognitoUsername;
+        const email = (payload.email as string | undefined) || req.session.cognitoEmail;
+        const emailVerified = payload.email_verified === true;
+
+        if (!username) {
+          return res.status(401).json({ error: "ログインしていません" });
+        }
+
+        if (!req.session.userId) {
+          const user = await ensureLocalUser(username, email, emailVerified);
+          req.session.userId = user.id;
+        } else if (emailVerified && req.session.userId) {
+          await storage.updateUser(req.session.userId, { emailVerified: new Date() });
+        }
+
+        req.authUser = {
+          username,
+          email,
+          emailVerified,
+        };
+
+        next();
+        return null;
+      })
+      .catch((error) => {
+        console.error("Cognito token verification failed", error);
+        req.session.destroy(() => {});
+        res.status(401).json({ error: "ログインしていません" });
+      });
   };
 
   app.post("/api/exports/s3", requireAuth, async (req, res) => {
