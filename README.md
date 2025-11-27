@@ -128,6 +128,12 @@ npm run dev
 - ワークフロー内で `npm install @aws-sdk/client-s3` を実行して S3 SDK を取り込み、Lambda パッケージ生成後に `aws s3 sync` と `aws lambda update-function-code` を呼び出します。
 - Lambda へ渡す環境変数は `LAMBDA_ENV_VARS` を GitHub Secrets に JSON 文字列として保存し、`{"APP_BASE_URL":"https://...","S3_BUCKET":"..."}` のようにキー・値を列挙してください（Secrets の `LAMBDA_ENV_VARS` を空にすれば、Lambda 側で手動設定した環境変数を保持します）。Parameter Store / Secrets Manager を使う場合はロールに該当権限を付与し、Lambda 設定で参照してください。
 
+### デプロイ用環境変数の管理方針
+- **ローカル開発**: リポジトリ直下（`TabConcentrator/.env`）に `.env` を置いて開発環境向けの値を読み込みます。.gitignore に含めているためリポジトリへコミットせず、共有が必要な場合は `.env.example` を別途用意する運用にしてください。
+- **GitHub Secrets**: 機密情報（`SESSION_SECRET`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `COGNITO_*`, `LAMBDA_ENV_VARS` など）は Secrets に保存し、Actions ワークフローから参照します。`LAMBDA_ENV_VARS` は `{"APP_BASE_URL":"https://...","S3_BUCKET":"..."}` のような JSON 文字列でまとめて渡すと管理が容易です（Secrets の値は Git 履歴に残りません）。
+- **GitHub Actions Variables / Environments**: バケット名や Lambda 関数名など機密でない値はリポジトリ変数（`FRONTEND_BUCKET`, `LAMBDA_FUNCTION_NAME`, `CLOUDFRONT_DISTRIBUTION_ID` など）として登録すると再利用しやすく、環境ごとに切り替えたい場合は GitHub Environments を使うと安全にステージング/本番を分けられます。
+- **AWS 側のパラメータ管理**: Secrets Manager や Parameter Store に置いた値を Lambda 起動時に参照させる運用も可能です。GitHub Actions からは OIDC でロールを引き受け、必要に応じて `aws lambda update-function-configuration` で環境変数を上書きしてください。
+
 ### デプロイ後の確認
 - API Gateway 経由で `/api/csrf-token`, `/api/auth/register`, `/api/auth/login` が期待通り動作することを確認してください。
 - CloudFront 経由でフロントエンドにアクセスし、登録・ログイン・パスワードリセットのフローがサーバレス構成で正常に動くかを確認します。
