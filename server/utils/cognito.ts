@@ -71,19 +71,21 @@ async function callCognito<T>(action: string, body: Record<string, unknown>, con
   const amzDate = now.toISOString().replace(/[:-]|\.\d{3}/g, "");
   const dateStamp = amzDate.slice(0, 8);
 
-  const canonicalHeaders = [
-    `content-type:application/x-amz-json-1.1`,
-    `host:${host}`,
-    `x-amz-date:${amzDate}`,
-    `x-amz-target:AWSCognitoIdentityProviderService.${action}`,
-    sessionToken ? `x-amz-security-token:${sessionToken}` : undefined,
-  ]
-    .filter(Boolean)
+  const canonicalHeaderEntries: Array<[string, string]> = [
+    ["content-type", "application/x-amz-json-1.1"],
+    ["host", host],
+    ["x-amz-date", amzDate],
+    ["x-amz-target", `AWSCognitoIdentityProviderService.${action}`],
+    ...(sessionToken ? [["x-amz-security-token", sessionToken]] : []),
+  ];
+
+  canonicalHeaderEntries.sort((a, b) => a[0].localeCompare(b[0]));
+
+  const canonicalHeaders = canonicalHeaderEntries
+    .map(([name, value]) => `${name}:${value}`)
     .join("\n");
 
-  const signedHeaders = sessionToken
-    ? "content-type;host;x-amz-date;x-amz-security-token;x-amz-target"
-    : "content-type;host;x-amz-date;x-amz-target";
+  const signedHeaders = canonicalHeaderEntries.map(([name]) => name).join(";");
 
   const canonicalRequest = [
     "POST",
