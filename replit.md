@@ -65,10 +65,6 @@ Preferred communication style: Simple, everyday language.
 - Tailwind CSS with PostCSS.
 - Zod for runtime validation and `zod-validation-error`.
 
-**Email Service**:
-- Resend (via resend package) for email verification and password reset emails.
-- API key stored in RESEND_API_KEY environment variable.
-
 **Fonts**:
 - Google Fonts (Inter, Architects Daughter, DM Sans, Fira Code, Geist Mono).
 
