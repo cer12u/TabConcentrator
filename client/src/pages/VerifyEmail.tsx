@@ -13,17 +13,8 @@ export default function VerifyEmail() {
 
   useEffect(() => {
     const verifyEmail = async () => {
-      const params = new URLSearchParams(window.location.search);
-      const token = params.get("token");
-
-      if (!token) {
-        setIsVerifying(false);
-        setErrorMessage("無効な確認リンクです");
-        return;
-      }
-
       try {
-        const res = await fetch(`/api/auth/verify-email?token=${encodeURIComponent(token)}`, {
+        const res = await fetch(`/api/auth/verify-email`, {
           credentials: "include",
         });
         const data = await res.json();
@@ -44,8 +35,8 @@ export default function VerifyEmail() {
     verifyEmail();
   }, []);
 
-  const goToHome = () => {
-    setLocation("/");
+  const goToLogin = () => {
+    setLocation("/login");
   };
 
   return (
@@ -94,8 +85,8 @@ export default function VerifyEmail() {
         </CardContent>
         <CardFooter className="flex justify-center">
           {!isVerifying && (
-            <Button onClick={goToHome} className="w-full" data-testid="button-go-home">
-              ホームに戻る
+            <Button onClick={goToLogin} className="w-full" data-testid="button-go-home">
+              ログイン画面に進む
             </Button>
           )}
         </CardFooter>

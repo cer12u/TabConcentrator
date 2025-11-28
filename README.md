@@ -79,9 +79,19 @@ S3_KEY=data.json
 S3_REGION=ap-northeast-1
 LAMBDA_WRITE_URL=https://your-lambda-writer-url (任意: ローカル開発では未設定でも可)
 SESSION_SECRET=your-random-secret-key
-APP_BASE_URL=https://your-public-app-url
-RESEND_API_KEY=your-resend-api-key
+COGNITO_USER_POOL_ID=your-user-pool-id
+COGNITO_CLIENT_ID=your-user-pool-client-id
+COGNITO_REGION=ap-northeast-1
+AWS_ACCESS_KEY_ID=your-iam-access-key
+AWS_SECRET_ACCESS_KEY=your-iam-secret-key
+S3_CACHE_TTL_MS=300000
 ```
+
+`S3_BUCKET` と `S3_KEY` を指定すると、アプリ起動時に自動で S3 ストレージを選択します。S3 を使わない場合は `DATABASE_URL` を設定するか
+、`SESSION_STORE_STRATEGY=memory` でメモリセッションのみを利用してください（メモリストアはスケールアウト時にセッションが消えます）。
+
+認証は AWS Cognito に委譲します。`COGNITO_*` と AWS の署名用クレデンシャル（`AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`）を
+設定してください。サインアップ・ログイン・パスワードリセットは Cognito のユーザープール API を経由して行われます。
 
 5. 開発サーバーを起動
 ```bash
@@ -95,21 +105,13 @@ npm run dev
 このリポジトリは Express アプリを AWS Lambda + API Gateway 上で動作させるためのエントリポイント `server/lambda.ts` を提供しています。低トラフィック時にコストを抑えたい場合は以下の構成が推奨です。
 
 ### バックエンド API
-1. 本番ビルド
+1. 本番ビルド + パッケージ生成
    ```bash
-   npm run build
+   npm run package:lambda
    ```
-   生成物として `dist/index.js`（Express サーバー）と `client` のビルド済みアセットが作成されます。
-2. Lambda 用バンドル
-   - `esbuild` などで `server/lambda.ts` を Node.js 18 ランタイム向けにバンドルし、`node_modules` とともに ZIP 化します。
-   - 例：
-     ```bash
-     npx esbuild server/lambda.ts \
-       --bundle --platform=node --target=node18 \
-       --outfile=lambda/index.mjs
-     zip -r lambda.zip lambda node_modules dist shared client
-     ```
-   - Lambda のハンドラーには `lambda/index.handler` を指定します。
+   `build/lambda.zip` に Lambda へアップロード可能な ZIP を生成します（`dist`/`shared`/`client`/`node_modules` をまとめ、エントリーポイントは
+   `index.mjs`）。
+2. Lambda のハンドラーには `index.handler` を指定します。
 3. API Gateway を REST / HTTP API として作成し、Lambda と統合します。環境変数は Lambda の設定または Systems Manager Parameter Store / Secrets Manager から読み込みます。
 
 ### セッションとデータストア
@@ -120,8 +122,17 @@ npm run dev
 - `npm run build` で生成される `dist/public` ディレクトリを S3 にアップロードし、CloudFront から配信します。
 - `APP_BASE_URL` は CloudFront の公開 URL に設定してください。
 
-### メール送信
-- `RESEND_API_KEY` を Lambda の環境変数に設定することで、Resend API をそのまま利用できます。
+### GitHub Actions によるデプロイ
+- `.github/workflows/deploy.yml` を使うと、`npm ci`・`npm run package:lambda` を含むビルドの上で S3 への静的アセット同期と Lambda コードの更新までを自動化できます。
+- OIDC 経由で Assume するロール（`AWS_ROLE_ARN`）とリージョン（`AWS_REGION`）を GitHub Secrets に登録してください。併せて、静的アセット用 S3 バケット名（`FRONTEND_BUCKET`）、Lambda 関数名（`LAMBDA_FUNCTION_NAME`）、任意で CloudFront ディストリビューション ID（`CLOUDFRONT_DISTRIBUTION_ID`）も設定します。
+- ワークフロー内で `npm install @aws-sdk/client-s3` を実行して S3 SDK を取り込み、Lambda パッケージ生成後に `aws s3 sync` と `aws lambda update-function-code` を呼び出します。
+- Lambda へ渡す環境変数は `LAMBDA_ENV_VARS` を GitHub Secrets に JSON 文字列として保存し、`{"APP_BASE_URL":"https://...","S3_BUCKET":"..."}` のようにキー・値を列挙してください（Secrets の `LAMBDA_ENV_VARS` を空にすれば、Lambda 側で手動設定した環境変数を保持します）。Parameter Store / Secrets Manager を使う場合はロールに該当権限を付与し、Lambda 設定で参照してください。
+
+### デプロイ用環境変数の管理方針
+- **ローカル開発**: リポジトリ直下（`TabConcentrator/.env`）に `.env` を置いて開発環境向けの値を読み込みます。.gitignore に含めているためリポジトリへコミットせず、共有が必要な場合は `.env.example` を別途用意する運用にしてください。
+- **GitHub Secrets**: 機密情報（`SESSION_SECRET`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `COGNITO_*`, `LAMBDA_ENV_VARS` など）は Secrets に保存し、Actions ワークフローから参照します。`LAMBDA_ENV_VARS` は `{"APP_BASE_URL":"https://...","S3_BUCKET":"..."}` のような JSON 文字列でまとめて渡すと管理が容易です（Secrets の値は Git 履歴に残りません）。
+- **GitHub Actions Variables / Environments**: バケット名や Lambda 関数名など機密でない値はリポジトリ変数（`FRONTEND_BUCKET`, `LAMBDA_FUNCTION_NAME`, `CLOUDFRONT_DISTRIBUTION_ID` など）として登録すると再利用しやすく、環境ごとに切り替えたい場合は GitHub Environments を使うと安全にステージング/本番を分けられます。
+- **AWS 側のパラメータ管理**: Secrets Manager や Parameter Store に置いた値を Lambda 起動時に参照させる運用も可能です。GitHub Actions からは OIDC でロールを引き受け、必要に応じて `aws lambda update-function-configuration` で環境変数を上書きしてください。
 
 ### デプロイ後の確認
 - API Gateway 経由で `/api/csrf-token`, `/api/auth/register`, `/api/auth/login` が期待通り動作することを確認してください。
