@@ -41,7 +41,7 @@ jobs:
           aws-region: ${{ secrets.AWS_REGION }}
 
       - name: Update Lambda environment variables (optional)
-        if: secrets.LAMBDA_ENV_VARS != ''
+        if: ${{ secrets.LAMBDA_ENV_VARS != '' }}
         run: aws lambda update-function-configuration --function-name ${{ secrets.LAMBDA_FUNCTION_NAME }} --environment "Variables=${{ secrets.LAMBDA_ENV_VARS }}"
 
       - name: Sync static assets to S3
@@ -51,5 +51,5 @@ jobs:
         run: aws lambda update-function-code --function-name ${{ secrets.LAMBDA_FUNCTION_NAME }} --zip-file fileb://build/lambda.zip
 
       - name: Invalidate CloudFront (optional)
-        if: secrets.CLOUDFRONT_DISTRIBUTION_ID != ''
+        if: ${{ secrets.CLOUDFRONT_DISTRIBUTION_ID != '' }}
         run: aws cloudfront create-invalidation --distribution-id ${{ secrets.CLOUDFRONT_DISTRIBUTION_ID }} --paths "/*"

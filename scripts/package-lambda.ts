@@ -39,7 +39,7 @@ async function packageLambda() {
   await copyIfExists(path.join(projectRoot, "client"), path.join(lambdaDir, "client"));
   await copyIfExists(path.join(projectRoot, "node_modules"), path.join(lambdaDir, "node_modules"));
 
-  execSync("zip -qr lambda.zip .", { stdio: "inherit", cwd: lambdaDir });
+  execSync(`zip -qr ${artifactPath} .`, { stdio: "inherit", cwd: lambdaDir });
 
   console.log(`Lambda package created at ${artifactPath}`);
 }
