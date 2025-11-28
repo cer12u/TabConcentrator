@@ -12,6 +12,7 @@ import { fetchImageAsBase64, isBase64Image, isHttpUrl } from "./utils/imageUtils
 import { exportUserToS3 } from "./exporter";
 import {
   cognitoConfirmForgotPassword,
+  cognitoConfirmSignUp,
   cognitoForgotPassword,
   cognitoGlobalSignOut,
   cognitoInitiateAuth,
@@ -256,10 +257,52 @@ export async function registerRoutes(app: Express): Promise<void> {
     });
   });
 
+  app.post("/api/auth/verify-email", async (req, res) => {
+    try {
+      const { code, username, email } = req.body as { code?: string; username?: string; email?: string };
+
+      if (!code) {
+        return res.status(400).json({ error: "確認コードを入力してください" });
+      }
+
+      const targetUsername =
+        username ||
+        (email ? (await storage.getUserByEmail(email))?.username : undefined) ||
+        req.session.cognitoUsername;
+
+      if (!targetUsername) {
+        return res.status(400).json({ error: "ユーザー名またはメールアドレスを入力してください" });
+      }
+
+      try {
+        await cognitoConfirmSignUp({ username: targetUsername, code });
+      } catch (confirmError: any) {
+        const message = confirmError?.message || "メール確認に失敗しました";
+        if (!message.includes("Current status is CONFIRMED")) {
+          return res.status(400).json({ error: message });
+        }
+      }
+
+      const user =
+        (await storage.getUserByUsername(targetUsername)) ||
+        (email ? await storage.getUserByEmail(email) : undefined) ||
+        (req.session.userId ? await storage.getUser(req.session.userId) : undefined);
+
+      if (user) {
+        await storage.updateUser(user.id, { emailVerified: new Date() });
+      }
+
+      res.json({ message: "メールアドレスが確認されました", username: targetUsername, emailVerified: true });
+    } catch (error) {
+      console.error("Email verification error:", error);
+      res.status(500).json({ error: "メール確認に失敗しました" });
+    }
+  });
+
   app.get("/api/auth/verify-email", async (req, res) => {
     try {
       if (!req.session.cognitoIdToken) {
-        return res.status(401).json({ error: "ログインしていません" });
+        return res.status(401).json({ error: "確認コードを入力するか、ログインしてください" });
       }
 
       const payload = await verifyCognitoIdToken(req.session.cognitoIdToken);

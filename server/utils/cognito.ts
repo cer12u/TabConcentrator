@@ -204,6 +204,21 @@ export async function cognitoForgotPassword(username: string): Promise<void> {
   await callCognito("ForgotPassword", { ClientId: config.clientId, Username: username }, config);
 }
 
+export async function cognitoConfirmSignUp({
+  username,
+  code,
+}: {
+  username: string;
+  code: string;
+}): Promise<void> {
+  const config = getCognitoConfig();
+  await callCognito(
+    "ConfirmSignUp",
+    { ClientId: config.clientId, Username: username, ConfirmationCode: code },
+    config,
+  );
+}
+
 export async function cognitoConfirmForgotPassword({
   username,
   code,
